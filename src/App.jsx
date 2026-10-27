@@ -195,6 +195,30 @@ export default function App() {
     }
   };
 
+  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64 (eliminująca błąd "invalid image")
+  const convertImageToJpeg = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64String = dataUrl.split(',')[1];
+          resolve({ base64String, mimeType: 'image/jpeg' });
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   // --- OCR PARAGONU ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -203,73 +227,69 @@ export default function App() {
     setOcrLoading(true);
     setOcrStatus('Analizowanie paragonu przez AI...');
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64String = reader.result.split(',')[1];
-        
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64String, mimeType: file.type })
-        });
+    try {
+      const { base64String, mimeType } = await convertImageToJpeg(file);
+      
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64String, mimeType })
+      });
 
-        if (!response.ok) throw new Error('Błąd serwera OCR');
-        
-        const data = await response.json();
-        console.log("Otrzymane dane OCR:", data);
+      if (!response.ok) throw new Error('Błąd serwera OCR');
+      
+      const data = await response.json();
+      console.log("Otrzymane dane OCR:", data);
 
-        let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
-        let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
-        let litry = data.liters ?? data.iloscLitrow ?? data.litersCount ?? data.ilosc ?? 0;
+      let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
+      let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
+      let litry = data.liters ?? data.iloscLitrow ?? data.litersCount ?? data.ilosc ?? 0;
 
-        if (!pLitr || !cCalk || !litry) {
-          const numbers = Object.values(data)
-            .flatMap(val => {
-              if (typeof val === 'number') return [val];
-              if (typeof val === 'string') {
-                const parsed = parseFloat(val.replace(',', '.'));
-                return !isNaN(parsed) ? [parsed] : [];
-              }
-              return [];
-            })
-            .filter(v => v > 0);
+      if (!pLitr || !cCalk || !litry) {
+        const numbers = Object.values(data)
+          .flatMap(val => {
+            if (typeof val === 'number') return [val];
+            if (typeof val === 'string') {
+              const parsed = parseFloat(val.replace(',', '.'));
+              return !isNaN(parsed) ? [parsed] : [];
+            }
+            return [];
+          })
+          .filter(v => v > 0);
 
-          if (numbers.length >= 3) {
-            numbers.sort((a, b) => a - b);
-            if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1];
-            if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1];
-            if (!cCalk) cCalk = numbers[numbers.length - 1];
-          } else if (numbers.length === 2) {
-            if (!litry) litry = numbers[0];
-            if (!cCalk) cCalk = numbers[1];
-          }
+        if (numbers.length >= 3) {
+          numbers.sort((a, b) => a - b);
+          if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1];
+          if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1];
+          if (!cCalk) cCalk = numbers[numbers.length - 1];
+        } else if (numbers.length === 2) {
+          if (!litry) litry = numbers[0];
+          if (!cCalk) cCalk = numbers[1];
         }
-
-        if (pLitr) setPricePerLiter(String(Number(pLitr).toFixed(2)));
-        if (cCalk) setTotalCost(String(Number(cCalk).toFixed(2)));
-        if (litry) setLiters(String(Number(litry).toFixed(2)));
-        
-        if (data.date) setDate(data.date);
-        if (data.time) setTime(data.time);
-
-        const numP = parseFloat(pLitr);
-        const numC = parseFloat(cCalk);
-        const numL = parseFloat(litry);
-
-        if (numC > 0 && numL > 0 && (!numP || isNaN(numP))) setPricePerLiter((numC / numL).toFixed(2));
-        if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
-        if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
-
-        setOcrStatus('Rozpoznano dane z paragonu!');
-      } catch (error) {
-        console.error("BŁĄD OCR:", error);
-        setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
-      } finally {
-        setOcrLoading(false);
       }
-    };
-    reader.readAsDataURL(file);
+
+      if (pLitr) setPricePerLiter(String(Number(pLitr).toFixed(2)));
+      if (cCalk) setTotalCost(String(Number(cCalk).toFixed(2)));
+      if (litry) setLiters(String(Number(litry).toFixed(2)));
+      
+      if (data.date) setDate(data.date);
+      if (data.time) setTime(data.time);
+
+      const numP = parseFloat(pLitr);
+      const numC = parseFloat(cCalk);
+      const numL = parseFloat(litry);
+
+      if (numC > 0 && numL > 0 && (!numP || isNaN(numP))) setPricePerLiter((numC / numL).toFixed(2));
+      if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
+      if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
+
+      setOcrStatus('Rozpoznano dane z paragonu!');
+    } catch (error) {
+      console.error("BŁĄD OCR:", error);
+      setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   // --- OCR LICZNIKÓW SAMOCHODU ---
@@ -280,42 +300,38 @@ export default function App() {
     setOdometerOcrLoading(true);
     setOcrStatus('Odczytywanie przebiegu z licznika przez AI...');
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64String = reader.result.split(',')[1];
-        
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            imageBase64: base64String, 
-            mimeType: file.type || 'image/jpeg',
-            type: 'odometer' 
-          })
-        });
+    try {
+      const { base64String, mimeType } = await convertImageToJpeg(file);
+      
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          imageBase64: base64String, 
+          mimeType,
+          type: 'odometer' 
+        })
+      });
 
-        const data = await response.json();
-        console.log("Odpowiedź serwera OCR licznika:", data);
+      const data = await response.json();
+      console.log("Odpowiedź serwera OCR licznika:", data);
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Błąd serwera OCR');
-        }
-
-        if (data.mileage && data.mileage > 0) {
-          setOdometer(String(data.mileage));
-          setOcrStatus('Pomyślnie odczytano przebieg ze zdjęcia!');
-        } else {
-          setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
-        }
-      } catch (error) {
-        console.error("BŁĄD OCR Licznika (szczegóły):", error);
-        setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
-      } finally {
-        setOdometerOcrLoading(false);
+      if (!response.ok) {
+        throw new Error(data.error || 'Błąd serwera OCR');
       }
-    };
-    reader.readAsDataURL(file);
+
+      if (data.mileage && data.mileage > 0) {
+        setOdometer(String(data.mileage));
+        setOcrStatus('Pomyślnie odczytano przebieg ze zdjęcia!');
+      } else {
+        setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
+      }
+    } catch (error) {
+      console.error("BŁĄD OCR Licznika (szczegóły):", error);
+      setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
+    } finally {
+      setOdometerOcrLoading(false);
+    }
   };
 
   // --- ZAPIS TANKOWANIA Z NATYCHMIASTOWYM ODŚWIEŻENIEM STANU ---
@@ -353,7 +369,7 @@ export default function App() {
         });
       }
 
-      // 2. Optymistyczna aktualizacja lokalnego stanu logs, aby UI odświeżyło się natychmiast bez przeładowywania
+      // 2. Optymistyczna aktualizacja lokalnego stanu logs
       const newLogItem = {
         id: 'temp-' + Date.now(),
         userId: user.uid,
