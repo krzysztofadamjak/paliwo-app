@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.2-11b-vision-preview',
+        model: 'llama-3.2-90b-vision-preview', // <-- Zaktualizowany model wizyjny
         messages: [
           {
             role: 'user',
@@ -60,7 +60,6 @@ Wszystkie pola liczbowe (pricePerLiter, totalCost, liters) muszą być typu numb
     const rawContent = data.choices?.[0]?.message?.content || '{}';
     console.log("Odpowiedź z Llama Vision:", rawContent);
 
-    // Czyszczenie ewentualnych znaczników markdown i sparsowanie JSON
     const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanedText);
 
