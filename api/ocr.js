@@ -18,7 +18,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama-3.2-90b-vision-preview', // <-- Zaktualizowany model wizyjny
+        model: 'qwen/qwen3.8-27b', // Używamy stabilnego Qwen 3.8 27B z obsługą wizji
         messages: [
           {
             role: 'user',
@@ -58,7 +58,7 @@ Wszystkie pola liczbowe (pricePerLiter, totalCost, liters) muszą być typu numb
     }
 
     const rawContent = data.choices?.[0]?.message?.content || '{}';
-    console.log("Odpowiedź z Llama Vision:", rawContent);
+    console.log("Odpowiedź z Qwen OCR:", rawContent);
 
     const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanedText);
@@ -66,6 +66,6 @@ Wszystkie pola liczbowe (pricePerLiter, totalCost, liters) muszą być typu numb
     return res.status(200).json(parsedData);
   } catch (error) {
     console.error('Groq OCR Server Error:', error);
-    return res.status(500).json({ error: 'Błąd przetwarzania OCR przez Llama Vision' });
+    return res.status(500).json({ error: 'Błąd przetwarzania OCR przez Qwen' });
   }
 }
