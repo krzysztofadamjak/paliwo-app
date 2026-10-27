@@ -12,7 +12,11 @@ export default async function handler(req, res) {
 
   try {
     const promptText = type === 'odometer'
-      ? `Przeanalizuj to zdjęcie zegarów lub licznika samochodu. Odczytaj całkowity przebieg (liczba kilometrów). Zwróć WYŁĄCZNIE samą liczbę kilometrów lub obiekt JSON {"mileage": 221512}. Żadnych innych słów.`
+      ? `Przeanalizuj to zdjęcie zegarów samochodu. Na wyświetlaczu są dwie liczby: główny przebieg (na górze, np. 270997) oraz przebieg dzienny/trip (na dole z kropką, np. 428.6). Odczytaj WYŁĄCZNIE GŁÓWNY przebieg (całkowitą liczbę kilometrów z górnego wiersza). Zwróć wynik jako czysty obiekt JSON w formacie:
+{
+  "mileage": 270997
+}
+Żadnego innego tekstu.`
       : `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON:
 {
   "pricePerLiter": 4.29,
@@ -56,16 +60,26 @@ export default async function handler(req, res) {
     }
 
     const rawContent = data.choices?.[0]?.message?.content || '{}';
-    console.log("Surowa odpowiedź AI dla licznika:", rawContent);
+    console.log("Odpowiedź AI dla licznika:", rawContent);
 
     let parsedData = {};
 
     if (type === 'odometer') {
-      // Bezpieczne wyciąganie cyfr ze stringa (np. jeśli model zwróci "221512 km")
-      const cleanedString = rawContent.replace(/[^\d]/g, '');
-      const mileageNum = parseInt(cleanedString, 10);
-      
-      parsedData = { mileage: !isNaN(mileageNum) ? mileageNum : 0 };
+      // Próbujemy sparsować JSON z odpowiedzi AI, a jeśli się nie uda, wyciągamy pierwszą dużą liczbę
+      try {
+        const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+        const jsonRes = JSON.parse(cleanedText);
+        if (jsonRes.mileage) {
+          parsedData = { mileage: Number(jsonRes.mileage) };
+        } else {
+          throw new Error('Brak pola mileage w JSON');
+        }
+      } catch (e) {
+        // Awaryjne wyciąganie – szukamy liczby która ma co najmniej 5 cyfr (główny przebieg)
+        const match = rawContent.match(/\d{5,}/);
+        const mileageNum = match ? parseInt(match[0], 10) : 0;
+        parsedData = { mileage: mileageNum };
+      }
     } else {
       const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
       parsedData = JSON.parse(cleanedText);
