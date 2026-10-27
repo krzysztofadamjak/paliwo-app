@@ -469,7 +469,7 @@ export default function App() {
                 required
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="np. 98krzychu@gmail.com"
+                placeholder="np. nazwa@domena.com"
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-amber-500"
               />
             </div>
