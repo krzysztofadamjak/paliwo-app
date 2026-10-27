@@ -11,14 +11,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Instrukcja dostosowana w zależności od tego, co skanujemy
     const promptText = type === 'odometer'
-      ? `Przeanalizuj to zdjęcie zegarów lub licznika samochodu. Odczytaj całkowity przebieg (liczba kilometrów). Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie:
-{
-  "mileage": 221512
-}
-Żadnego dodatkowego tekstu ani znaczników markdown.`
-      : `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON (bez znaczników markdown):
+      ? `Przeanalizuj to zdjęcie zegarów lub licznika samochodu. Odczytaj całkowity przebieg (liczba kilometrów). Zwróć WYŁĄCZNIE samą liczbę kilometrów lub obiekt JSON {"mileage": 221512}. Żadnych innych słów.`
+      : `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON:
 {
   "pricePerLiter": 4.29,
   "totalCost": 204.68,
@@ -26,12 +21,7 @@ export default async function handler(req, res) {
   "date": "2017-07-08",
   "time": "18:39",
   "fuelType": "PB95"
-}
-Wskazówki: 
-- Cena za litr to zazwyczaj wartość z gwiazdką (np. *4.29).
-- Ilość litrów to liczba obok nazwy paliwa.
-- Suma to kwota przy napisie "Suma" lub "PLN".
-Wszystkie pola liczbowe muszą być typu number z kropką dziesiętną.`;
+}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -54,7 +44,7 @@ Wszystkie pola liczbowe muszą być typu number z kropką dziesiętną.`;
           }
         ],
         temperature: 0.1,
-        max_tokens: 200
+        max_tokens: 150
       })
     });
 
@@ -66,10 +56,20 @@ Wszystkie pola liczbowe muszą być typu number z kropką dziesiętną.`;
     }
 
     const rawContent = data.choices?.[0]?.message?.content || '{}';
-    console.log("Odpowiedź z OCR AI:", rawContent);
+    console.log("Surowa odpowiedź AI dla licznika:", rawContent);
 
-    const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedData = JSON.parse(cleanedText);
+    let parsedData = {};
+
+    if (type === 'odometer') {
+      // Bezpieczne wyciąganie cyfr ze stringa (np. jeśli model zwróci "221512 km")
+      const cleanedString = rawContent.replace(/[^\d]/g, '');
+      const mileageNum = parseInt(cleanedString, 10);
+      
+      parsedData = { mileage: !isNaN(mileageNum) ? mileageNum : 0 };
+    } else {
+      const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsedData = JSON.parse(cleanedText);
+    }
 
     return res.status(200).json(parsedData);
   } catch (error) {
