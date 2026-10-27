@@ -195,7 +195,7 @@ export default function App() {
     }
   };
 
-  // --- OBSŁUGA SKANERA PARAGONÓW OCR (Wersja hybrydowa: Vercel + Localhost) ---
+  // --- OBSŁUGA SKANERA PARAGONÓW OCR (Odporna na formaty odpowiedzi AI) ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -207,63 +207,48 @@ export default function App() {
     reader.onloadend = async () => {
       try {
         const base64String = reader.result.split(',')[1];
-        let data = null;
-
-        // 1. Próba wywołania bezpiecznego backendu (/api/ocr na Vercel)
+        
         const response = await fetch('/api/ocr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageBase64: base64String, mimeType: file.type })
         });
 
-        if (response.ok) {
-          data = await response.json();
-        } else {
-          // 2. Fallback dla localhost:5173 (używa pliku .env.local na Twoim komputerze)
-          const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-          if (!localApiKey) {
-            throw new Error('Brak klucza VITE_GEMINI_API_KEY w pliku .env.local');
+        if (!response.ok) throw new Error('Błąd serwera OCR');
+        
+        const data = await response.json();
+        console.log("Otrzymane dane OCR:", data);
+
+        // Wyciąganie wartości z uwzględnieniem różnych wariantów nazw pól od AI
+        const pLitr = data.pricePerLiter || data.cenaZaLitr || data.price || 0;
+        const cCalk = data.totalCost || data.cenaCalkowita || data.total || 0;
+        const litry = data.liters || data.iloscLitrow || data.litersCount || 0;
+        
+        if (pLitr > 0) setPricePerLiter(String(pLitr));
+        if (cCalk > 0) setTotalCost(String(cCalk));
+        if (litry > 0) setLiters(String(litry));
+        
+        if (data.date) setDate(data.date);
+        if (data.time) setTime(data.time);
+        
+        if (data.fuelType) {
+          const fType = String(data.fuelType).toUpperCase();
+          if (activeVehicle?.fuelConfig === 'LPG' && (fType.includes('LPG') || fType.includes('PB'))) {
+            setFuelType(fType.includes('LPG') ? 'LPG' : 'PB95');
+          } else if (activeVehicle) {
+            setFuelType(activeVehicle.fuelConfig);
           }
-
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${localApiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { text: 'Przeanalizuj ten paragon ze stacji paliw. Zwróć TYLKO czysty obiekt JSON bez znaczników markdown: {"pricePerLiter": liczba, "totalCost": liczba, "liters": liczba, "date": "RRRR-MM-DD", "time": "GG:MM", "fuelType": "LPG" lub "PB95" lub "ON"}' },
-                    { inline_data: { mime_type: file.type || 'image/jpeg', data: base64String } }
-                  ]
-                }]
-              })
-            }
-          );
-
-          const geminiData = await geminiRes.json();
-          const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-          data = JSON.parse(text.replace(/```json|```/g, '').trim());
         }
 
-        if (data) {
-          if (data.pricePerLiter) setPricePerLiter(String(data.pricePerLiter));
-          if (data.totalCost) setTotalCost(String(data.totalCost));
-          if (data.liters) setLiters(String(data.liters));
-          if (data.date) setDate(data.date);
-          if (data.time) setTime(data.time);
-          if (data.fuelType) {
-            if (activeVehicle?.fuelConfig === 'LPG' && (data.fuelType === 'LPG' || data.fuelType === 'PB95')) {
-              setFuelType(data.fuelType);
-            } else if (activeVehicle) {
-              setFuelType(activeVehicle.fuelConfig);
-            }
-          }
-          setOcrStatus('Rozpoznano dane z paragonu! Wprowadź aktualny przebieg pojazdu.');
-        }
+        // Jeśli jakiejś wartości brakuje, spróbuj wyliczyć matematycznie
+        if (pLitr > 0 && litry > 0 && !cCalk) setTotalCost((pLitr * litry).toFixed(2));
+        if (cCalk > 0 && litry > 0 && !pLitr) setPricePerLiter((cCalk / litry).toFixed(2));
+        if (cCalk > 0 && pLitr > 0 && !litry) setLiters((cCalk / pLitr).toFixed(2));
+
+        setOcrStatus('Rozpoznano dane z paragonu! Wprowadź aktualny przebieg pojazdu.');
       } catch (error) {
         console.error(error);
-        setOcrStatus('Nie udało się odczytać paragonu. Sprawdź klucz API lub wprowadź dane ręcznie.');
+        setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
       } finally {
         setOcrLoading(false);
       }
