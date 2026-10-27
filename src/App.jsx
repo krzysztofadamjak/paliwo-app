@@ -70,6 +70,7 @@ export default function App() {
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
+  const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
 
   // --- STANY FORMULARZA POJAZDU ---
   const [editingVehicleId, setEditingVehicleId] = useState(null);
@@ -121,7 +122,6 @@ export default function App() {
 
     const unsubVehicles = onSnapshot(collection(db, 'vehicles'), (snapshot) => {
       const allV = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      const userV = allV.filter(v => v.userId === user.uid || isAdmin);
       setVehicles(allV);
 
       const myVehicles = allV.filter(v => v.userId === user.uid);
@@ -195,7 +195,7 @@ export default function App() {
     }
   };
 
- // --- OSTATECZNA WERSJA OCR (Bezpośrednie mapowanie obiektów z konsoli) ---
+  // --- OCR PARAGONU ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -219,12 +219,10 @@ export default function App() {
         const data = await response.json();
         console.log("Otrzymane dane OCR:", data);
 
-        // Pobieramy wartości sprawdzając najczęstsze warianty kluczy
         let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
         let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
         let litry = data.liters ?? data.iloscLitrow ?? data.litersCount ?? data.ilosc ?? 0;
 
-        // Jeśli wartości nadal są puste, wyciągamy wszystkie liczby z obiektu po kolei
         if (!pLitr || !cCalk || !litry) {
           const numbers = Object.values(data)
             .flatMap(val => {
@@ -239,16 +237,15 @@ export default function App() {
 
           if (numbers.length >= 3) {
             numbers.sort((a, b) => a - b);
-            if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1]; // cena za litr
-            if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1]; // ilość litrów
-            if (!cCalk) cCalk = numbers[numbers.length - 1]; // koszt całkowity
+            if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1];
+            if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1];
+            if (!cCalk) cCalk = numbers[numbers.length - 1];
           } else if (numbers.length === 2) {
             if (!litry) litry = numbers[0];
             if (!cCalk) cCalk = numbers[1];
           }
         }
 
-        // Automatyczne uzupełnienie pól w formularzu
         if (pLitr) setPricePerLiter(String(Number(pLitr).toFixed(2)));
         if (cCalk) setTotalCost(String(Number(cCalk).toFixed(2)));
         if (litry) setLiters(String(Number(litry).toFixed(2)));
@@ -256,7 +253,6 @@ export default function App() {
         if (data.date) setDate(data.date);
         if (data.time) setTime(data.time);
 
-        // Ostatnia deska ratunku - przeliczenie matematyczne, jeśli brakuje jednej zmiennej
         const numP = parseFloat(pLitr);
         const numC = parseFloat(cCalk);
         const numL = parseFloat(litry);
@@ -265,7 +261,7 @@ export default function App() {
         if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
         if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
 
-        setOcrStatus('Rozpoznano dane z paragonu! Wprowadź aktualny przebieg pojazdu.');
+        setOcrStatus('Rozpoznano dane z paragonu!');
       } catch (error) {
         console.error("BŁĄD OCR:", error);
         setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
@@ -276,7 +272,51 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // --- ZAPIS TANKOWANIA ---
+  // --- OCR LICZNIKÓW SAMOCHODU ---
+  const handleOdometerUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setOdometerOcrLoading(true);
+    setOcrStatus('Odczytywanie przebiegu z licznika przez AI...');
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const base64String = reader.result.split(',')[1];
+        
+        const response = await fetch('/api/ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            imageBase64: base64String, 
+            mimeType: file.type,
+            type: 'odometer' 
+          })
+        });
+
+        if (!response.ok) throw new Error('Błąd serwera OCR');
+        
+        const data = await response.json();
+        console.log("Otrzymane dane licznika OCR:", data);
+
+        if (data.mileage && data.mileage > 0) {
+          setOdometer(String(data.mileage));
+          setOcrStatus('Pomyślnie odczytano przebieg ze zdjęcia!');
+        } else {
+          setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
+        }
+      } catch (error) {
+        console.error("BŁĄD OCR Licznika:", error);
+        setOcrStatus('Błąd podczas skanowania licznika.');
+      } finally {
+        setOdometerOcrLoading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // --- ZAPIS TANKOWANIA Z NATYCHMIASTOWYM ODŚWIEŻENIEM STANU ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle) return;
@@ -289,32 +329,55 @@ export default function App() {
       return;
     }
 
-    await addDoc(collection(db, 'fuelLogs'), {
-      userId: user.uid,
-      vehicleId: activeVehicle.id,
-      fuelType,
-      pricePerLiter: parseFloat(pricePerLiter),
-      totalCost: parseFloat(totalCost),
-      liters: parseFloat(liters),
-      odometer: currentOdo,
-      isFullTank,
-      date,
-      time,
-      createdAt: new Date().toISOString()
-    });
-
-    if (currentOdo > minOdo) {
-      await updateDoc(doc(db, 'vehicles', activeVehicle.id), {
-        currentOdometer: currentOdo
+    try {
+      // 1. Zapis do Firestore
+      await addDoc(collection(db, 'fuelLogs'), {
+        userId: user.uid,
+        vehicleId: activeVehicle.id,
+        fuelType,
+        pricePerLiter: parseFloat(pricePerLiter),
+        totalCost: parseFloat(totalCost),
+        liters: parseFloat(liters),
+        odometer: currentOdo,
+        isFullTank,
+        date,
+        time,
+        createdAt: new Date().toISOString()
       });
-    }
 
-    setPricePerLiter('');
-    setTotalCost('');
-    setLiters('');
-    setOdometer('');
-    setOcrStatus('');
-    setActiveTab('dashboard');
+      if (currentOdo > minOdo) {
+        await updateDoc(doc(db, 'vehicles', activeVehicle.id), {
+          currentOdometer: currentOdo
+        });
+      }
+
+      // 2. Optymistyczna aktualizacja lokalnego stanu logs, aby UI odświeżyło się natychmiast bez przeładowywania
+      const newLogItem = {
+        id: 'temp-' + Date.now(),
+        userId: user.uid,
+        vehicleId: activeVehicle.id,
+        fuelType,
+        pricePerLiter: parseFloat(pricePerLiter),
+        totalCost: parseFloat(totalCost),
+        liters: parseFloat(liters),
+        odometer: currentOdo,
+        isFullTank,
+        date,
+        time
+      };
+      setLogs(prev => [newLogItem, ...prev]);
+
+      // Wyczyszczenie formularza
+      setPricePerLiter('');
+      setTotalCost('');
+      setLiters('');
+      setOdometer('');
+      setOcrStatus('Tankowanie zostało pomyślnie zapisane!');
+      setActiveTab('dashboard');
+    } catch (error) {
+      console.error("Błąd podczas zapisu tankowania:", error);
+      alert('Nie udało się zapisać tankowania.');
+    }
   };
 
   // --- ZARZĄDZANIE POJAZDAMI ---
@@ -379,7 +442,7 @@ export default function App() {
         const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
         return logDate >= yearAgo;
       }
-      return true; // 'all' (od rejestracji)
+      return true;
     });
 
     const totalCostSum = filteredLogs.reduce((acc, l) => acc + (l.totalCost || 0), 0);
@@ -396,7 +459,6 @@ export default function App() {
 
     const avgConsumption = distance > 0 ? ((totalLitersSum / distance) * 100).toFixed(2) : '0.00';
 
-    // Koszt w bieżącym miesiącu kalendarzowym (do limitu)
     const currentMonthLogs = logs.filter(l => {
       if (l.userId !== user?.uid) return false;
       const d = new Date(l.date);
@@ -816,6 +878,7 @@ export default function App() {
                 </div>
               </div>
 
+              {/* POLE PRZEBIEGU ORAZ DEDYKOWANY PRZYCISK OCR LICZNIKÓW AI */}
               <div>
                 <label className="block text-xs text-amber-400 font-bold mb-1">
                   Aktualny przebieg samochodu (km) — poprzednio: {activeVehicle?.currentOdometer || activeVehicle?.initialOdometer || 0} km
@@ -828,6 +891,23 @@ export default function App() {
                   placeholder="Wpisz aktualny stan licznika"
                   className="w-full bg-zinc-950 border border-amber-500/50 rounded-xl px-4 py-3 text-lg font-bold"
                 />
+
+                <div className="mt-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    id="odometer-ocr-input"
+                    className="hidden"
+                    onChange={handleOdometerUpload}
+                  />
+                  <label
+                    htmlFor="odometer-ocr-input"
+                    className="inline-flex items-center justify-center w-full py-2.5 px-4 bg-zinc-950 hover:bg-zinc-800 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-xl cursor-pointer transition shadow-sm"
+                  >
+                    {odometerOcrLoading ? '📷 Analizowanie licznika przez AI...' : '📷 Dodaj zdjęcie liczników OCR AI'}
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -974,7 +1054,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ZAKŁADKA 4: PANEL ADMINISTRATORA (Tylko dla 98krzychu@gmail.com) */}
+        {/* ZAKŁADKA 4: PANEL ADMINISTRATORA */}
         {activeTab === 'admin' && isAdmin && (
           <div className="space-y-6">
             <div className="bg-zinc-900 border border-amber-500/30 rounded-2xl p-6">
