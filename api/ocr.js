@@ -18,23 +18,27 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'qwen/qwen3.8-27b', // Używamy stabilnego Qwen 3.8 27B z obsługą wizji
+        model: 'qwen/qwen3.8-27b',
         messages: [
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Przeanalizuj ten paragon ze stacji paliw. Wyciągnij z niego dane i zwróć WYŁĄCZNIE czysty obiekt JSON (bez żadnego dodatkowego tekstu, bez znaczników markdown \`\`\`json):
+                text: `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON (bez żadnego dodatkowego tekstu, bez znaczników markdown \`\`\`json):
 {
-  "pricePerLiter": 6.59,
-  "totalCost": 200.00,
-  "liters": 30.35,
-  "date": "2026-10-27",
-  "time": "14:20",
+  "pricePerLiter": 4.29,
+  "totalCost": 204.68,
+  "liters": 47.00,
+  "date": "2017-07-08",
+  "time": "18:39",
   "fuelType": "PB95"
 }
-Wszystkie pola liczbowe (pricePerLiter, totalCost, liters) muszą być typu number z kropką dziesiętną.`
+Wskazówki: 
+- Cena za litr to zazwyczaj wartość z gwiazdką (np. *4.29).
+- Ilość litrów to liczba poprzedzona lub będąca obok nazwy paliwa (np. EUROSUPER 95).
+- Suma całkowita to kwota przy napisie "Suma" lub "PLN".
+Wszystkie pola liczbowe muszą być typu number z kropką dziesiętną.`
               },
               {
                 type: 'image_url',
