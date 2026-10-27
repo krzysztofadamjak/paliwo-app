@@ -290,15 +290,17 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             imageBase64: base64String, 
-            mimeType: file.type,
+            mimeType: file.type || 'image/jpeg',
             type: 'odometer' 
           })
         });
 
-        if (!response.ok) throw new Error('Błąd serwera OCR');
-        
         const data = await response.json();
-        console.log("Otrzymane dane licznika OCR:", data);
+        console.log("Odpowiedź serwera OCR licznika:", data);
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Błąd serwera OCR');
+        }
 
         if (data.mileage && data.mileage > 0) {
           setOdometer(String(data.mileage));
@@ -307,8 +309,8 @@ export default function App() {
           setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
         }
       } catch (error) {
-        console.error("BŁĄD OCR Licznika:", error);
-        setOcrStatus('Błąd podczas skanowania licznika.');
+        console.error("BŁĄD OCR Licznika (szczegóły):", error);
+        setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
       } finally {
         setOdometerOcrLoading(false);
       }
