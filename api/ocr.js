@@ -11,14 +11,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Dynamiczny prompt w zależności od tego, czy to licznik, czy paragon
-    const promptText = type === 'odometer' 
-      ? `Przeanalizuj to zdjęcie zegarów / licznika samochodu. Odczytaj aktualny przebieg (stan licznika w kilometrach). Zwróć WYŁĄCZNIE czysty obiekt JSON (bez znaczników markdown \`\`\`json):
+    // Instrukcja dostosowana w zależności od tego, co skanujemy
+    const promptText = type === 'odometer'
+      ? `Przeanalizuj to zdjęcie zegarów lub licznika samochodu. Odczytaj całkowity przebieg (liczba kilometrów). Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie:
 {
   "mileage": 221512
 }
-Wszystkie pola muszą być typu number.`
-      : `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON (bez znaczników markdown \`\`\`json):
+Żadnego dodatkowego tekstu ani znaczników markdown.`
+      : `Przeanalizuj ten paragon ze stacji paliw. Zwróć WYŁĄCZNIE czysty obiekt JSON (bez znaczników markdown):
 {
   "pricePerLiter": 4.29,
   "totalCost": 204.68,
@@ -66,7 +66,7 @@ Wszystkie pola liczbowe muszą być typu number z kropką dziesiętną.`;
     }
 
     const rawContent = data.choices?.[0]?.message?.content || '{}';
-    console.log("Odpowiedź AI:", rawContent);
+    console.log("Odpowiedź z OCR AI:", rawContent);
 
     const cleanedText = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanedText);
