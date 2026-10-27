@@ -195,7 +195,7 @@ export default function App() {
     }
   };
 
-  // --- OBSŁUGA SKANERA PARAGONÓW OCR (Odporna na formaty odpowiedzi AI) ---
+ // --- OSTATECZNA WERSJA OCR (Bezpośrednie mapowanie obiektów z konsoli) ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -219,35 +219,55 @@ export default function App() {
         const data = await response.json();
         console.log("Otrzymane dane OCR:", data);
 
-        // Wyciąganie wartości z uwzględnieniem różnych wariantów nazw pól od AI
-        const pLitr = data.pricePerLiter || data.cenaZaLitr || data.price || 0;
-        const cCalk = data.totalCost || data.cenaCalkowita || data.total || 0;
-        const litry = data.liters || data.iloscLitrow || data.litersCount || 0;
-        
-        if (pLitr > 0) setPricePerLiter(String(pLitr));
-        if (cCalk > 0) setTotalCost(String(cCalk));
-        if (litry > 0) setLiters(String(litry));
-        
-        if (data.date) setDate(data.date);
-        if (data.time) setTime(data.time);
-        
-        if (data.fuelType) {
-          const fType = String(data.fuelType).toUpperCase();
-          if (activeVehicle?.fuelConfig === 'LPG' && (fType.includes('LPG') || fType.includes('PB'))) {
-            setFuelType(fType.includes('LPG') ? 'LPG' : 'PB95');
-          } else if (activeVehicle) {
-            setFuelType(activeVehicle.fuelConfig);
+        // Pobieramy wartości sprawdzając najczęstsze warianty kluczy
+        let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
+        let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
+        let litry = data.liters ?? data.iloscLitrow ?? data.litersCount ?? data.ilosc ?? 0;
+
+        // Jeśli wartości nadal są puste, wyciągamy wszystkie liczby z obiektu po kolei
+        if (!pLitr || !cCalk || !litry) {
+          const numbers = Object.values(data)
+            .flatMap(val => {
+              if (typeof val === 'number') return [val];
+              if (typeof val === 'string') {
+                const parsed = parseFloat(val.replace(',', '.'));
+                return !isNaN(parsed) ? [parsed] : [];
+              }
+              return [];
+            })
+            .filter(v => v > 0);
+
+          if (numbers.length >= 3) {
+            numbers.sort((a, b) => a - b);
+            if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1]; // cena za litr
+            if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1]; // ilość litrów
+            if (!cCalk) cCalk = numbers[numbers.length - 1]; // koszt całkowity
+          } else if (numbers.length === 2) {
+            if (!litry) litry = numbers[0];
+            if (!cCalk) cCalk = numbers[1];
           }
         }
 
-        // Jeśli jakiejś wartości brakuje, spróbuj wyliczyć matematycznie
-        if (pLitr > 0 && litry > 0 && !cCalk) setTotalCost((pLitr * litry).toFixed(2));
-        if (cCalk > 0 && litry > 0 && !pLitr) setPricePerLiter((cCalk / litry).toFixed(2));
-        if (cCalk > 0 && pLitr > 0 && !litry) setLiters((cCalk / pLitr).toFixed(2));
+        // Automatyczne uzupełnienie pól w formularzu
+        if (pLitr) setPricePerLiter(String(Number(pLitr).toFixed(2)));
+        if (cCalk) setTotalCost(String(Number(cCalk).toFixed(2)));
+        if (litry) setLiters(String(Number(litry).toFixed(2)));
+        
+        if (data.date) setDate(data.date);
+        if (data.time) setTime(data.time);
+
+        // Ostatnia deska ratunku - przeliczenie matematyczne, jeśli brakuje jednej zmiennej
+        const numP = parseFloat(pLitr);
+        const numC = parseFloat(cCalk);
+        const numL = parseFloat(litry);
+
+        if (numC > 0 && numL > 0 && (!numP || isNaN(numP))) setPricePerLiter((numC / numL).toFixed(2));
+        if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
+        if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
 
         setOcrStatus('Rozpoznano dane z paragonu! Wprowadź aktualny przebieg pojazdu.');
       } catch (error) {
-        console.error(error);
+        console.error("BŁĄD OCR:", error);
         setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
       } finally {
         setOcrLoading(false);
