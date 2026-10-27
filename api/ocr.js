@@ -7,10 +7,11 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'Brak klucza API na serwerze' });
+    return res.status(500).json({ error: 'Brak zmiennej środowiskowej GEMINI_API_KEY na Vercelu!' });
   }
 
   try {
+    // Używamy stabilnego i powszechnie dostępnego modelu gemini-1.5-flash
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
@@ -19,7 +20,18 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           contents: [{
             parts: [
-              { text: 'Przeanalizuj ten paragon ze stacji paliw. Zwróć TYLKO czysty obiekt JSON bez znaczników markdown: {"pricePerLiter": liczba, "totalCost": liczba, "liters": liczba, "date": "RRRR-MM-DD", "time": "GG:MM", "fuelType": "LPG" lub "PB95" lub "ON"}' },
+              { 
+                text: `Przeanalizuj ten paragon ze stacji paliw. Zwróć DOKŁADNE dane w czystym formacie JSON bez żadnych znaczników markdown (bez \`\`\`json):
+{
+  "pricePerLiter": 6.59,
+  "totalCost": 200.00,
+  "liters": 30.35,
+  "date": "2026-10-27",
+  "time": "14:00",
+  "fuelType": "PB95"
+}
+Wszystkie pola liczbowe (pricePerLiter, totalCost, liters) muszą być typu number z kropką dziesiętną. Nie pomijaj ich.` 
+              },
               { inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } }
             ]
           }]
@@ -28,11 +40,22 @@ export default async function handler(req, res) {
     );
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const cleanJson = JSON.parse(text.replace(/```json|```/g, '').trim());
+    
+    if (data.error) {
+      console.error("Google API Error:", data.error);
+      return res.status(500).json({ error: data.error.message || 'Błąd Google AI' });
+    }
 
-    return res.status(200).json(cleanJson);
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    console.log("Surowy tekst od AI:", rawText);
+
+    // Czyszczenie ze znaczników i parsowanie JSON
+    const cleanedText = rawText.replace(/```json|```/g, '').trim();
+    const parsedData = JSON.parse(cleanedText);
+
+    return res.status(200).json(parsedData);
   } catch (error) {
-    return res.status(500).json({ error: 'Błąd przetwarzania obrazu OCR' });
+    console.error('OCR Server Error:', error);
+    return res.status(500).json({ error: 'Błąd przetwarzania obrazu OCR na serwerze' });
   }
 }
