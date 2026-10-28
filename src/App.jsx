@@ -263,55 +263,70 @@ export default function App() {
     });
   };
 
-  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (STABILNY MODEL Z TIMEOUTEM) ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (MODEL 3.8-FLASH + AUTO-RETRY PRZY PRZECIĄŻENIU 503) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Oficjalnie wspierany model dla obrazów (Gemini nie posiada 3.8-flash)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // Jedyny model akceptowany przez Twoje nowe konto Google API: gemini-3.8-flash
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-    // Zabezpieczenie przed zawieszeniem się aplikacji (limit 15 sekund)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    // Do 3 automatycznych prób w razie chwilowego przeciążenia serwerów Google (błąd 503)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: mimeType, data: base64String } }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json"
+      try {
+        if (attempt > 1) {
+          setOcrStatus(`Serwer Google zajęty — ponawiam próbę (${attempt}/3)...`);
+          await new Promise(res => setTimeout(res, 2000)); // Odczekaj 2 sekundy przed ponowieniem
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: base64String } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        clearTimeout(timeoutId);
+
+        // Jeśli Google zwróci 503 (High demand) lub 429, przejdź do kolejnej próby w pętli
+        if ((response.status === 503 || response.status === 429) && attempt < 3) {
+          console.warn(`Gemini 3.8 Flash przeciążone (kod ${response.status}), próba ${attempt}/3...`);
+          continue;
+        }
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+        }
+
+        const result = await response.json();
+        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const cleanedJson = rawText.replace(/```json|```/g, '').trim();
+        return JSON.parse(cleanedJson);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (attempt === 3) {
+          if (err.name === 'AbortError') {
+            throw new Error('Przekroczono czas oczekiwania na odpowiedź serwera Gemini (15s).');
           }
-        })
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+          throw err;
+        }
       }
-
-      const result = await response.json();
-      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-      return JSON.parse(cleanedJson);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        throw new Error('Przekroczono czas oczekiwania na odpowiedź serwera Gemini (15 sekund).');
-      }
-      throw err;
     }
   };
 
