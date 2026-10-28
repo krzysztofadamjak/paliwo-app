@@ -263,41 +263,59 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (OPARTY NA STABILNYM MODELU 3.8-FLASH) ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (Z AUTOMATYCZNYM PRZEŁĄCZANIEM MODELI W RAZIE PRECIĄŻENIA) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    const modelName = 'gemini-3.8-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+    // Lista modeli do przetestowania po kolei (jeśli jeden ma wysokie obciążenie 503, sprawdzi kolejny)
+    const modelsToTry = [
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-3.8-flash'
+    ];
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType, data: base64String } }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inline_data: { mime_type: mimeType, data: base64String } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `Błąd HTTP ${response.status} dla modelu ${modelName}`);
         }
-      })
-    });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData?.error?.message || `Błąd HTTP ${response.status} dla modelu ${modelName}`);
+        const result = await response.json();
+        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const cleanedJson = rawText.replace(/```json|```/g, '').trim();
+        return JSON.parse(cleanedJson);
+
+      } catch (err) {
+        console.warn(`Model ${modelName} niedostępny lub przeciążony, próbuję kolejny...`, err.message);
+        lastError = err;
+      }
     }
 
-    const result = await response.json();
-    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleanedJson);
+    throw lastError || new Error('Wszystkie modele zapasowe Gemini są obecnie przeciążone. Spróbuj za chwilę.');
   };
 
   // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
