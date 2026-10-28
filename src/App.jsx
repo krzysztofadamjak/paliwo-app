@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // Konwersja i kompresja obrazu (zmniejsza zużycie tokenów o ~70%)
+  // Konwersja i kompresja obrazu
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -269,8 +269,7 @@ export default function App() {
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Próbuje najpierw gemini-3.8-flash, a w razie potrzeby przechodzi na stabilne gemini-2.5-flash / gemini-2.0-flash
-    const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
     let lastError = null;
 
     for (const modelName of models) {
@@ -303,7 +302,7 @@ export default function App() {
         const cleanedJson = rawText.replace(/```json|```/g, '').trim();
         return JSON.parse(cleanedJson);
       } catch (err) {
-        console.warn(` Próba modelu ${modelName} nie powiodła się, przełączam dalej...`, err.message);
+        console.warn(`Próba modelu ${modelName} nie powiodła się, przełączam dalej...`, err.message);
         lastError = err;
       }
     }
@@ -449,7 +448,7 @@ export default function App() {
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
-    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu
+    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu[cite: 1]
     if (currentOdo <= minOdo) {
       alert(`Wprowadzony przebieg (${currentOdo} km) nie może być mniejszy lub równy poprzedniemu (${minOdo} km)!`);
       return;
