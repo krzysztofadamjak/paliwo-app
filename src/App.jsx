@@ -71,6 +71,7 @@ export default function App() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Blokada przed podwójnym kliknięciem
 
   // --- STANY FORMULARZA POJAZDU ---
   const [editingVehicleId, setEditingVehicleId] = useState(null);
@@ -195,7 +196,7 @@ export default function App() {
     }
   };
 
-  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64 (eliminująca błąd "invalid image")
+  // Pomocnicza funkcja konwertująca obraz na JPEG
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -239,7 +240,6 @@ export default function App() {
       if (!response.ok) throw new Error('Błąd serwera OCR');
       
       const data = await response.json();
-      console.log("Otrzymane dane OCR:", data);
 
       let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
       let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
@@ -314,11 +314,7 @@ export default function App() {
       });
 
       const data = await response.json();
-      console.log("Odpowiedź serwera OCR licznika:", data);
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Błąd serwera OCR');
-      }
+      if (!response.ok) throw new Error(data.error || 'Błąd serwera OCR');
 
       if (data.mileage && data.mileage > 0) {
         setOdometer(String(data.mileage));
@@ -327,17 +323,17 @@ export default function App() {
         setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
       }
     } catch (error) {
-      console.error("BŁĄD OCR Licznika (szczegóły):", error);
+      console.error("BŁĄD OCR Licznika:", error);
       setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
     } finally {
       setOdometerOcrLoading(false);
     }
   };
 
-  // --- ZAPIS TANKOWANIA Z NATYCHMIASTOWYM ODŚWIEŻENIEM STANU ---
+  // --- ZAPIS TANKOWANIA Z BLOKADĄ PODWÓJNEGO KLIKNIĘCIA ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
-    if (!activeVehicle) return;
+    if (!activeVehicle || isSubmitting) return; // Zapobiega wielokrotnemu dodaniu
 
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
@@ -347,8 +343,10 @@ export default function App() {
       return;
     }
 
+    setIsSubmitting(true); // Zablokowanie przycisku zapisu
+
     try {
-      // 1. Zapis do Firestore
+      // Zapis do Firestore (Firebase sam zaktualizuje stan przez onSnapshot)
       await addDoc(collection(db, 'fuelLogs'), {
         userId: user.uid,
         vehicleId: activeVehicle.id,
@@ -369,22 +367,6 @@ export default function App() {
         });
       }
 
-      // 2. Optymistyczna aktualizacja lokalnego stanu logs
-      const newLogItem = {
-        id: 'temp-' + Date.now(),
-        userId: user.uid,
-        vehicleId: activeVehicle.id,
-        fuelType,
-        pricePerLiter: parseFloat(pricePerLiter),
-        totalCost: parseFloat(totalCost),
-        liters: parseFloat(liters),
-        odometer: currentOdo,
-        isFullTank,
-        date,
-        time
-      };
-      setLogs(prev => [newLogItem, ...prev]);
-
       // Wyczyszczenie formularza
       setPricePerLiter('');
       setTotalCost('');
@@ -395,6 +377,8 @@ export default function App() {
     } catch (error) {
       console.error("Błąd podczas zapisu tankowania:", error);
       alert('Nie udało się zapisać tankowania.');
+    } finally {
+      setIsSubmitting(false); // Odblokowanie przycisku
     }
   };
 
@@ -964,9 +948,10 @@ export default function App() {
 
               <button
                 type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold py-3.5 rounded-xl transition"
+                disabled={isSubmitting}
+                className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-bold py-3.5 rounded-xl transition"
               >
-                Zapisz tankowanie
+                {isSubmitting ? 'Zapisywanie...' : 'Zapisz tankowanie'}
               </button>
             </form>
           </div>
