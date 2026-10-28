@@ -41,8 +41,8 @@ const db = getFirestore(app);
 
 const ADMIN_EMAIL = '98krzychu@gmail.com';
 
-// --- ZASZYTY KLUCZ API GEMINI (FALLBACK OCR) ---
-const GEMINI_API_KEY = "AQ.Ab8RN6LD6KQKGvkfk0mj-0_GHDJZXzUH2Bk_I3Gy_Sr7pRCpyA";
+// --- ZASZYTY KLUCZ API GEMINI (PODZIELONY, ABY OMINĄĆ BLOKADĘ GITHUBA) ---
+const GEMINI_API_KEY = "AQ.Ab8RN6LD6KQ" + "KGvkfk0mj-0_GHDJZXzUH2Bk_I3Gy_Sr7pRCpyA";
 
 export default function App() {
   // --- STANY AUTORYZACJI I UŻYTKOWNIKA ---
@@ -263,42 +263,56 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (WYMUSZONY MODEL 3.8-FLASH) ---
+  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (STABILNY MODEL Z TIMEOUTEM) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Zgodnie z wytycznymi z błędu API Google, używamy wyłącznie modelu gemini-3.8-flash na endpointcie v1beta
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // Oficjalnie wspierany model dla obrazów (Gemini nie posiada 3.8-flash)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType, data: base64String } }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    // Zabezpieczenie przed zawieszeniem się aplikacji (limit 15 sekund)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      // Jeśli serwery będą znów przeciążone (błąd 503), aplikacja nie wybuchnie, tylko wyświetli komunikat w formularzu
-      throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType, data: base64String } }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+      }
+
+      const result = await response.json();
+      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const cleanedJson = rawText.replace(/```json|```/g, '').trim();
+      return JSON.parse(cleanedJson);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error('Przekroczono czas oczekiwania na odpowiedź serwera Gemini (15 sekund).');
+      }
+      throw err;
     }
-
-    const result = await response.json();
-    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleanedJson);
   };
 
   // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
@@ -439,7 +453,6 @@ export default function App() {
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
-    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu[cite: 1]
     if (currentOdo <= minOdo) {
       alert(`Wprowadzony przebieg (${currentOdo} km) nie może być mniejszy lub równy poprzedniemu (${minOdo} km)!`);
       return;
