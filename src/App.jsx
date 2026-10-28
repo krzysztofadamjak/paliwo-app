@@ -199,6 +199,8 @@ export default function App() {
     if (activeVehicle) {
       setSelectedVehicleId(activeVehicle.id);
       setFuelType(activeVehicle.fuelConfig === 'LPG' ? 'LPG' : activeVehicle.fuelConfig);
+    } else {
+      setSelectedVehicleId('');
     }
   }, [activeVehicle?.id]);
 
@@ -983,44 +985,58 @@ export default function App() {
 
         {/* ZAKŁADKA 2: DODAJ TANKOWANIE / OCR */}
         {activeTab === 'refuel' && (
-          <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR + Gemini Fallback)
-            </h2>
+          !activeVehicle ? (
+            <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+              <Car className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-zinc-100 mb-6">
+                Rejestracja tankowania będzie możliwa po dodaniu pojazdu do aplikacji
+              </h2>
+              <button
+                onClick={() => setActiveTab('fleet')}
+                className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold px-6 py-3 rounded-xl transition"
+              >
+                Przejdź do dodawania pojazdu
+              </button>
+            </div>
+          ) : (
+            <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR + Gemini Fallback)
+              </h2>
 
-            {/* Przycisk Skanowania Paragonu */}
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 rounded-2xl p-6 cursor-pointer transition mb-6">
-              <Camera className="w-10 h-10 text-amber-500 mb-2" />
-              <span className="font-bold text-amber-400 text-sm">
-                {ocrLoading ? 'Przetwarzanie paragonu...' : 'Zrób zdjęcie paragonu lub wybierz z galerii'}
-              </span>
-              <span className="text-xs text-zinc-400 mt-1">Automatycznie rozpozna kwotę, litry, datę oraz rodzaj paliwa</span>
-              <input type="file" accept="image/*" capture="environment" onChange={handleReceiptUpload} className="hidden" />
-            </label>
+              {/* Przycisk Skanowania Paragonu */}
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 rounded-2xl p-6 cursor-pointer transition mb-6">
+                <Camera className="w-10 h-10 text-amber-500 mb-2" />
+                <span className="font-bold text-amber-400 text-sm">
+                  {ocrLoading ? 'Przetwarzanie paragonu...' : 'Zrób zdjęcie paragonu lub wybierz z galerii'}
+                </span>
+                <span className="text-xs text-zinc-400 mt-1">Automatycznie rozpozna kwotę, litry, datę oraz rodzaj paliwa</span>
+                <input type="file" accept="image/*" capture="environment" onChange={handleReceiptUpload} className="hidden" />
+              </label>
 
-            {ocrStatus && (
-              <div className="mb-4 p-3 bg-zinc-950 border border-amber-500/30 rounded-xl text-xs text-amber-300">
-                {ocrStatus}
-              </div>
-            )}
+              {ocrStatus && (
+                <div className="mb-4 p-3 bg-zinc-950 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                  {ocrStatus}
+                </div>
+              )}
 
-            <form onSubmit={handleAddFuelLog} className="space-y-4">
-              {/* Wybór paliwa (Dla instalacji LPG pozwala wybrać LPG lub PB95) */}
-              {activeVehicle?.fuelConfig === 'LPG' ? (
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Rodzaj tankowanego paliwa (Instalacja LPG + PB95)</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {['LPG', 'PB95'].map(type => (
-                      <button
-                        type="button"
-                        key={type}
-                        onClick={() => setFuelType(type)}
-                        className={`py-2.5 rounded-xl font-bold text-sm border ${
-                          fuelType === type ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
+              <form onSubmit={handleAddFuelLog} className="space-y-4">
+                {/* Wybór paliwa (Dla instalacji LPG pozwala wybrać LPG lub PB95) */}
+                {activeVehicle?.fuelConfig === 'LPG' ? (
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Rodzaj tankowanego paliwa (Instalacja LPG + PB95)</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {['LPG', 'PB95'].map(type => (
+                        <button
+                          type="button"
+                          key={type}
+                          onClick={() => setFuelType(type)}
+                          className={`py-2.5 rounded-xl font-bold text-sm border ${
+                            fuelType === type ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
                         }`}
-                      >
-                        {type}
-                      </button>
+                        >
+                          {type}
+                        </button>
                     ))}
                   </div>
                 </div>
@@ -1141,7 +1157,7 @@ export default function App() {
               </button>
             </form>
           </div>
-        )}
+        ))}
 
         {/* ZAKŁADKA 3: ZARZĄDZANIE FLOTĄ POJAZDÓW */}
         {activeTab === 'fleet' && (
