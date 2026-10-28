@@ -21,7 +21,8 @@ import {
 import { 
   Fuel, Car, Plus, Trash2, Edit3, ShieldAlert, LogOut, 
   Camera, CheckCircle2, AlertTriangle, Users, Calendar, 
-  TrendingUp, Gauge, DollarSign, Droplets, Lock, Ban, RefreshCw
+  TrendingUp, Gauge, DollarSign, Droplets, Lock, Ban, RefreshCw,
+  Wrench, Receipt, FileText, Download, Printer, Sparkles, Briefcase, ShieldCheck
 } from 'lucide-react';
 
 // --- KONFIGURACJA FIREBASE (OCTAN-72484) ---
@@ -55,11 +56,15 @@ export default function App() {
   const [authError, setAuthError] = useState('');
 
   // --- STANY NAWIGACJI I DANYCH ---
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, refuel, fleet, admin
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, refuel, service, expenses, fleet, admin
   const [timeFilter, setTimeFilter] = useState('month'); // week, month, year, all
+  const [tripFilter, setTripFilter] = useState('all'); // all, private, business (Moduł 3)
+  const [vatDeductionMode, setVatDeductionMode] = useState(50); // 50% lub 100% odliczenia VAT (Moduł 3)
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [logs, setLogs] = useState([]);
+  const [serviceLogs, setServiceLogs] = useState([]); // Moduł 1: Historia i harmonogram serwisowy
+  const [expenseLogs, setExpenseLogs] = useState([]); // Moduł 2: Koszty dodatkowe TCO
   const [allUsers, setAllUsers] = useState([]);
 
   // --- STANY FORMULARZA TANKOWANIA / OCR ---
@@ -69,12 +74,34 @@ export default function App() {
   const [liters, setLiters] = useState('');
   const [odometer, setOdometer] = useState('');
   const [isFullTank, setIsFullTank] = useState(true);
+  const [tripType, setTripType] = useState('private'); // private, business (Moduł 3)
+  const [tripNotes, setTripNotes] = useState(''); // Cel wyjazdu / trasa dla kilometrówki
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- STANY MODUŁU 1: SERWIS I TERMINY (OC/AC, PRZEGLĄD, WYMIANY) ---
+  const [insuranceExpiryInput, setInsuranceExpiryInput] = useState('');
+  const [inspectionExpiryInput, setInspectionExpiryInput] = useState('');
+  const [serviceType, setServiceType] = useState('Wymiana oleju i filtrów');
+  const [serviceCost, setServiceCost] = useState('');
+  const [serviceOdo, setServiceOdo] = useState('');
+  const [nextServiceOdo, setNextServiceOdo] = useState('');
+  const [nextServiceDate, setNextServiceDate] = useState('');
+  const [serviceDate, setServiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [serviceNotes, setServiceNotes] = useState('');
+
+  // --- STANY MODUŁU 2: KOSZTY DODATKOWE (TCO) ---
+  const [expCategory, setExpCategory] = useState('Serwis / Części');
+  const [expAmount, setExpAmount] = useState('');
+  const [expDate, setExpDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [expTitle, setExpTitle] = useState('');
+  const [expTripType, setExpTripType] = useState('private');
+  const [expOcrLoading, setExpOcrLoading] = useState(false);
+  const [expOcrStatus, setExpOcrStatus] = useState('');
 
   // --- STAN RZĄDOWYCH LIMITÓW CEN (AKTUALIZOWANY O 18:00) ---
   const [fuelLimits, setFuelLimits] = useState({
@@ -158,7 +185,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Pobieranie pojazdów, tankowań i użytkowników z Firestore
+  // 2. Pobieranie pojazdów, tankowań, serwisów, wydatków i użytkowników z Firestore
   useEffect(() => {
     if (!user) return;
 
@@ -177,6 +204,16 @@ export default function App() {
       setLogs(allL);
     });
 
+    const unsubServices = onSnapshot(collection(db, 'serviceLogs'), (snapshot) => {
+      const allS = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setServiceLogs(allS);
+    });
+
+    const unsubExpenses = onSnapshot(collection(db, 'expenseLogs'), (snapshot) => {
+      const allE = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setExpenseLogs(allE);
+    });
+
     let unsubUsers = () => {};
     if (isAdmin) {
       unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -187,6 +224,8 @@ export default function App() {
     return () => {
       unsubVehicles();
       unsubLogs();
+      unsubServices();
+      unsubExpenses();
       unsubUsers();
     };
   }, [user, isAdmin]);
@@ -199,6 +238,9 @@ export default function App() {
     if (activeVehicle) {
       setSelectedVehicleId(activeVehicle.id);
       setFuelType(activeVehicle.fuelConfig === 'LPG' ? 'LPG' : activeVehicle.fuelConfig);
+      setInsuranceExpiryInput(activeVehicle.insuranceExpiry || '');
+      setInspectionExpiryInput(activeVehicle.inspectionExpiry || '');
+      setServiceOdo(activeVehicle.currentOdometer || activeVehicle.initialOdometer || '');
     } else {
       setSelectedVehicleId('');
     }
@@ -265,13 +307,17 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (Z AUTOMATYCZNYM WYKRYWANIEM DOSTĘPNYCH MODELI) ---
+  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (Z AUTOMATYCZNYM WYKRYWANIEM DOSTĘPNYCH MODELI) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
-    const prompt = type === 'odometer'
-      ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
-      : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
+    let prompt = '';
+    if (type === 'odometer') {
+      prompt = 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}';
+    } else if (type === 'expense') {
+      prompt = 'Przeanalizuj paragon lub fakturę kosztową (np. myjnia, serwis, części, autostrada). Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"totalCost": 150.00, "date": "YYYY-MM-DD", "title": "Krótki opis zakupu/usługi"}';
+    } else {
+      prompt = 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
+    }
 
-    // 1. Pobieramy bezpośrednio od Google listę modeli przypisanych do Twojego klucza API
     let candidateModels = [];
     try {
       const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
@@ -289,7 +335,6 @@ export default function App() {
           )
           .map(m => m.name.replace('models/', ''));
 
-        // Sortujemy tak, aby najpierw próbować szybkich modeli (lite / flash / pro)
         candidateModels.sort((a, b) => {
           const score = (name) => name.includes('lite') ? 1 : name.includes('flash') ? 2 : name.includes('pro') ? 3 : 4;
           return score(a) - score(b);
@@ -300,7 +345,6 @@ export default function App() {
       console.warn('Nie udało się pobrać listy modeli, używam listy awaryjnej:', e);
     }
 
-    // Jeśli z jakiegoś powodu lista się nie pobrała, mamy szeroką listę zapasową
     if (candidateModels.length === 0) {
       candidateModels = [
         'gemini-3.8-flash-lite',
@@ -313,13 +357,16 @@ export default function App() {
 
     let lastError = null;
 
-    // 2. Próbujemy po kolei wykryte modele — jeśli jeden ma błąd 503 (High Demand), kolejny zadziała!
     for (const modelName of candidateModels) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       try {
-        setOcrStatus(`Analizowanie przez AI (${modelName})...`);
+        if (type === 'expense') {
+          setExpOcrStatus(`Analizowanie przez AI (${modelName})...`);
+        } else {
+          setOcrStatus(`Analizowanie przez AI (${modelName})...`);
+        }
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
         const response = await fetch(url, {
@@ -362,7 +409,7 @@ export default function App() {
     throw lastError || new Error('Wszystkie dostępne modele AI są w tej chwili zajęte.');
   };
 
-  // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
+  // --- OCR PARAGONU PALIWOWEGO ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -444,7 +491,7 @@ export default function App() {
     }
   };
 
-  // --- OCR LICZNIKÓW SAMOCHODU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
+  // --- OCR LICZNIKÓW SAMOCHODU ---
   const handleOdometerUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -492,6 +539,44 @@ export default function App() {
     }
   };
 
+  // --- MODUŁ 2: OCR PARAGONU KOSZTOWEGO (MYJNIA, CZĘŚCI, SERWIS) ---
+  const handleExpenseReceiptUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setExpOcrLoading(true);
+    setExpOcrStatus('Analizowanie paragonu kosztowego przez AI...');
+
+    try {
+      const { base64String, mimeType } = await convertImageToJpeg(file);
+      let data = null;
+
+      try {
+        data = await callGeminiFallback(base64String, mimeType, 'expense');
+      } catch (err) {
+        const response = await fetch('/api/ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64String, mimeType })
+        });
+        if (!response.ok) throw new Error('Błąd odczytu paragonu');
+        data = await response.json();
+      }
+
+      const cost = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.price ?? 0;
+      if (cost > 0) setExpAmount(String(Number(cost).toFixed(2)));
+      if (data.date) setExpDate(data.date);
+      if (data.title && !expTitle) setExpTitle(data.title);
+
+      setExpOcrStatus('Pomyślnie odczytano kwotę z paragonu kosztowego!');
+    } catch (error) {
+      console.error('Błąd OCR wydatku:', error);
+      setExpOcrStatus('Nie udało się odczytać paragonu. Wpisz kwotę ręcznie.');
+    } finally {
+      setExpOcrLoading(false);
+    }
+  };
+
   // --- ZAPIS TANKOWANIA Z BLOKADĄ PRZEBIEGU ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
@@ -517,6 +602,8 @@ export default function App() {
         liters: parseFloat(liters),
         odometer: currentOdo,
         isFullTank,
+        tripType, // Moduł 3: private vs business
+        tripNotes, // Moduł 3: Notatka do kilometrówki
         date,
         time,
         createdAt: new Date().toISOString()
@@ -526,7 +613,6 @@ export default function App() {
         currentOdometer: currentOdo
       });
 
-      // Automatyczny powrót i odświeżenie strony
       setActiveTab('dashboard');
       window.location.reload();
 
@@ -535,6 +621,70 @@ export default function App() {
       alert('Nie udało się zapisać tankowania.');
       setIsSubmitting(false);
     }
+  };
+
+  // --- MODUŁ 1: ZAPIS DAT WAŻNOŚCI OC/AC I PRZEGLĄDU ORAZ WPISÓW SERWISOWYCH ---
+  const handleSaveVehicleDates = async (e) => {
+    e.preventDefault();
+    if (!activeVehicle) return;
+    await updateDoc(doc(db, 'vehicles', activeVehicle.id), {
+      insuranceExpiry: insuranceExpiryInput,
+      inspectionExpiry: inspectionExpiryInput
+    });
+    alert('Zapisano terminy ważności polisy OC/AC i badania technicznego!');
+  };
+
+  const handleAddServiceLog = async (e) => {
+    e.preventDefault();
+    if (!activeVehicle) return;
+
+    const costNum = parseFloat(serviceCost) || 0;
+    const odoNum = parseFloat(serviceOdo) || activeVehicle.currentOdometer || 0;
+    const nextOdoNum = parseFloat(nextServiceOdo) || 0;
+
+    await addDoc(collection(db, 'serviceLogs'), {
+      userId: user.uid,
+      vehicleId: activeVehicle.id,
+      serviceType,
+      cost: costNum,
+      odometer: odoNum,
+      nextTargetOdo: nextOdoNum,
+      nextTargetDate: nextServiceDate,
+      date: serviceDate,
+      notes: serviceNotes,
+      createdAt: new Date().toISOString()
+    });
+
+    // Jeśli wpisano koszt naprawy, opcjonalnie aktualizujemy przebieg jeśli jest wyższy
+    if (odoNum > (activeVehicle.currentOdometer || 0)) {
+      await updateDoc(doc(db, 'vehicles', activeVehicle.id), { currentOdometer: odoNum });
+    }
+
+    setServiceCost('');
+    setNextServiceOdo('');
+    setNextServiceDate('');
+    setServiceNotes('');
+  };
+
+  // --- MODUŁ 2: ZAPIS WYDATKU DODATKOWEGO (TCO) ---
+  const handleAddExpenseLog = async (e) => {
+    e.preventDefault();
+    if (!activeVehicle) return;
+
+    await addDoc(collection(db, 'expenseLogs'), {
+      userId: user.uid,
+      vehicleId: activeVehicle.id,
+      category: expCategory,
+      amount: parseFloat(expAmount) || 0,
+      title: expTitle || expCategory,
+      tripType: expTripType,
+      date: expDate,
+      createdAt: new Date().toISOString()
+    });
+
+    setExpAmount('');
+    setExpTitle('');
+    setExpOcrStatus('');
   };
 
   // --- ZARZĄDZANIE POJAZDAMI ---
@@ -576,46 +726,101 @@ export default function App() {
     if (selectedVehicleId === id) setSelectedVehicleId('');
   };
 
-  // --- STATYSTYKI I ANALIZA KOSZTÓW ---
+  // --- STATYSTYKI, TCO, KILOMETRÓWKA I DORADCA ECO-DRIVING (MODUŁY 1-4) ---
   const stats = useMemo(() => {
-    if (!activeVehicle) return { cost: 0, liters: 0, distance: 0, avgConsumption: 0, currentMonthCost: 0 };
+    if (!activeVehicle) {
+      return {
+        cost: '0.00', liters: '0.00', distance: 0, avgConsumption: '0.00',
+        currentMonthCost: '0.00', recentLogs: [], vehicleServices: [], vehicleExpenses: [],
+        otherCostsTotal: '0.00', totalTco: '0.00', costPerKm: '0.00', costPer100KmFuel: '0.00',
+        vatDeductibleTotal: '0.00', netBusinessCost: '0.00',
+        ecoAdvice: null, alerts: [], categoryBreakdown: {}
+      };
+    }
 
-    const vehicleLogs = logs
+    const now = new Date();
+    const filterByDate = (dateStr) => {
+      const logDate = new Date(dateStr);
+      if (timeFilter === 'week') return logDate >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (timeFilter === 'month') return logDate >= new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (timeFilter === 'year') return logDate >= new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      return true;
+    };
+
+    const filterByTrip = (itemTripType) => {
+      const t = itemTripType || 'private';
+      if (tripFilter === 'all') return true;
+      return t === tripFilter;
+    };
+
+    // Logi paliwowe
+    const allVehicleFuelLogs = logs
       .filter(l => l.vehicleId === activeVehicle.id)
       .sort((a, b) => a.odometer - b.odometer);
 
-    const now = new Date();
-    const filteredLogs = vehicleLogs.filter(l => {
-      const logDate = new Date(l.date);
-      if (timeFilter === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return logDate >= weekAgo;
+    // Wyliczanie jednostkowego spalania między tankowaniami dla doradcy Eco-Driving
+    const logsWithSingleConsumption = allVehicleFuelLogs.map((log, index) => {
+      if (index === 0) {
+        const distFromInit = log.odometer - (activeVehicle.initialOdometer || log.odometer);
+        const cons = distFromInit > 0 ? ((log.liters / distFromInit) * 100) : null;
+        return { ...log, segmentDistance: Math.max(0, distFromInit), segmentConsumption: cons };
       }
-      if (timeFilter === 'month') {
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        return logDate >= monthAgo;
-      }
-      if (timeFilter === 'year') {
-        const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-        return logDate >= yearAgo;
-      }
-      return true;
+      const prevLog = allVehicleFuelLogs[index - 1];
+      const dist = log.odometer - prevLog.odometer;
+      const cons = dist > 0 ? ((log.liters / dist) * 100) : null;
+      return { ...log, segmentDistance: Math.max(0, dist), segmentConsumption: cons };
     });
+
+    const filteredLogs = logsWithSingleConsumption.filter(l => filterByDate(l.date) && filterByTrip(l.tripType));
+
+    // Serwisy i wydatki dodatkowe
+    const vehicleServices = serviceLogs
+      .filter(s => s.vehicleId === activeVehicle.id)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const vehicleExpenses = expenseLogs
+      .filter(e => e.vehicleId === activeVehicle.id)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const filteredServices = vehicleServices.filter(s => filterByDate(s.date));
+    const filteredExpenses = vehicleExpenses.filter(e => filterByDate(e.date) && filterByTrip(e.tripType));
 
     const totalCostSum = filteredLogs.reduce((acc, l) => acc + (l.totalCost || 0), 0);
     const totalLitersSum = filteredLogs.reduce((acc, l) => acc + (l.liters || 0), 0);
 
+    const servicesCostSum = tripFilter === 'business' ? 0 : filteredServices.reduce((acc, s) => acc + (s.cost || 0), 0);
+    const expensesCostSum = filteredExpenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+    const otherCostsSum = servicesCostSum + expensesCostSum;
+    const totalTcoSum = totalCostSum + otherCostsSum;
+
+    // Dystans
     let distance = 0;
     if (filteredLogs.length > 0) {
-      const maxOdo = Math.max(...filteredLogs.map(l => l.odometer));
-      const minOdo = timeFilter === 'all' 
-        ? activeVehicle.initialOdometer 
-        : Math.min(...filteredLogs.map(l => l.odometer));
-      distance = Math.max(0, maxOdo - minOdo);
+      if (tripFilter === 'all') {
+        const maxOdo = Math.max(...filteredLogs.map(l => l.odometer));
+        const minOdo = timeFilter === 'all' 
+          ? activeVehicle.initialOdometer 
+          : Math.min(...filteredLogs.map(l => l.odometer));
+        distance = Math.max(0, maxOdo - minOdo);
+      } else {
+        distance = filteredLogs.reduce((acc, l) => acc + (l.segmentDistance || 0), 0);
+      }
     }
 
-    const avgConsumption = distance > 0 ? ((totalLitersSum / distance) * 100).toFixed(2) : '0.00';
+    const avgConsumptionNum = distance > 0 ? (totalLitersSum / distance) * 100 : 0;
+    const avgConsumption = avgConsumptionNum.toFixed(2);
+    const costPerKm = distance > 0 ? (totalTcoSum / distance).toFixed(2) : '0.00';
+    const costPer100KmFuel = distance > 0 ? ((totalCostSum / distance) * 100).toFixed(2) : '0.00';
 
+    // Podatki / VAT (Moduł 3 - wyliczane z brutto przy stawce 23% VAT)
+    const businessFuelGross = filteredLogs.filter(l => l.tripType === 'business').reduce((a, b) => a + (b.totalCost || 0), 0);
+    const businessExpGross = filteredExpenses.filter(e => e.tripType === 'business').reduce((a, b) => a + (b.amount || 0), 0);
+    const totalBusinessGross = businessFuelGross + businessExpGross;
+    const totalBusinessNet = totalBusinessGross / 1.23;
+    const totalBusinessVat = totalBusinessGross - totalBusinessNet;
+    const vatDeductibleTotal = (totalBusinessVat * (vatDeductionMode / 100)).toFixed(2);
+
+    // Miesięczny budżet użytkownika
     const currentMonthLogs = logs.filter(l => {
       if (l.userId !== user?.uid) return false;
       const d = new Date(l.date);
@@ -623,15 +828,167 @@ export default function App() {
     });
     const currentMonthCost = currentMonthLogs.reduce((acc, l) => acc + (l.totalCost || 0), 0);
 
+    // MODUŁ 1: Alerty o terminach OC/AC, przeglądzie oraz zbliżającym się serwisie olejowym/części
+    const alerts = [];
+    const currentOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
+
+    if (activeVehicle.insuranceExpiry) {
+      const daysLeft = Math.ceil((new Date(activeVehicle.insuranceExpiry) - now) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 30) {
+        alerts.push({
+          type: daysLeft < 0 ? 'danger' : 'warning',
+          title: daysLeft < 0 ? 'Wygasła polisa ubezpieczenia OC/AC!' : `Koniec polisy OC/AC za ${daysLeft} dni (${activeVehicle.insuranceExpiry})`
+        });
+      }
+    }
+    if (activeVehicle.inspectionExpiry) {
+      const daysLeft = Math.ceil((new Date(activeVehicle.inspectionExpiry) - now) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 30) {
+        alerts.push({
+          type: daysLeft < 0 ? 'danger' : 'warning',
+          title: daysLeft < 0 ? 'Wygasło badanie techniczne pojazdu!' : `Przegląd techniczny za ${daysLeft} dni (${activeVehicle.inspectionExpiry})`
+        });
+      }
+    }
+
+    vehicleServices.forEach(s => {
+      if (s.nextTargetOdo && s.nextTargetOdo > 0) {
+        const kmLeft = s.nextTargetOdo - currentOdo;
+        if (kmLeft <= 1500) {
+          alerts.push({
+            type: kmLeft <= 0 ? 'danger' : 'warning',
+            title: kmLeft <= 0 
+              ? `Przekroczono interwał serwisu: ${s.serviceType} o ${Math.abs(kmLeft)} km!` 
+              : `Zbliża się serwis (${s.serviceType}): pozostało ${kmLeft} km`
+          });
+        }
+      }
+    });
+
+    // MODUŁ 4: Inteligentny Doradca Eco-Driving
+    const validConsLogs = logsWithSingleConsumption.filter(l => l.segmentConsumption && l.segmentConsumption > 2 && l.segmentConsumption < 35);
+    let ecoAdvice = {
+      status: 'neutral',
+      headline: 'Zbieranie danych o stylu jazdy',
+      tip: 'Dodaj minimum 2 tankowania, aby asystent Eco-Driving przeanalizował dynamikę spalania, ciśnienie w oponach i koszty.',
+      projectedMonthlyCost: (currentMonthCost > 0 ? currentMonthCost : totalCostSum).toFixed(0)
+    };
+
+    if (validConsLogs.length >= 2) {
+      const lastCons = validConsLogs[validConsLogs.length - 1].segmentConsumption;
+      const prevAvg = validConsLogs.slice(0, -1).reduce((a, b) => a + b.segmentConsumption, 0) / (validConsLogs.length - 1);
+      const diffPercent = ((lastCons - prevAvg) / prevAvg) * 100;
+
+      if (diffPercent > 8) {
+        ecoAdvice = {
+          status: 'warning',
+          headline: `Spalanie wzrosło o ${diffPercent.toFixed(1)}% (${lastCons.toFixed(2)} l/100km)`,
+          tip: 'Ostatnie tankowanie wskazuje na wyższe zużycie paliwa. Zalecenie: sprawdź ciśnienie w oponach (optymalnie np. 2.5–2.7 bar zimą), unikaj gwałtownego przyspieszania na zimnym silniku oraz zweryfikuj stan filtrów.',
+          projectedMonthlyCost: (currentMonthCost * 1.12 || totalCostSum).toFixed(0)
+        };
+      } else if (diffPercent < -5) {
+        ecoAdvice = {
+          status: 'good',
+          headline: `Świetny wynik! Spalanie spadło o ${Math.abs(diffPercent).toFixed(1)}% (${lastCons.toFixed(2)} l/100km)`,
+          tip: 'Twój styl jazdy jest bardzo ekonomiczny. Płynna jazda i hamowanie silnikiem obniżyły koszt przejechania 100 km.',
+          projectedMonthlyCost: (currentMonthCost * 0.92 || totalCostSum).toFixed(0)
+        };
+      } else {
+        ecoAdvice = {
+          status: 'good',
+          headline: `Stabilne spalanie w normie (${lastCons.toFixed(2)} l/100km)`,
+          tip: 'Zużycie paliwa utrzymuje się na przewidywalnym poziomie. Regularnie kontroluj ciśnienie w ogumieniu przed dłuższymi trasami.',
+          projectedMonthlyCost: (currentMonthCost || totalCostSum).toFixed(0)
+        };
+      }
+    } else if (validConsLogs.length === 1) {
+      const c = validConsLogs[0].segmentConsumption;
+      ecoAdvice = {
+        status: 'good',
+        headline: `Pierwszy pomiar spalania: ${c.toFixed(2)} l/100km`,
+        tip: 'Pamiętaj o utrzymaniu właściwego ciśnienia w oponach i tankowaniu do pełna, aby uzyskać najdokładniejsze analizy przy kolejnej wizycie na stacji.',
+        projectedMonthlyCost: (currentMonthCost || totalCostSum).toFixed(0)
+      };
+    }
+
     return {
       cost: totalCostSum.toFixed(2),
       liters: totalLitersSum.toFixed(2),
       distance,
       avgConsumption,
       currentMonthCost: currentMonthCost.toFixed(2),
-      recentLogs: [...filteredLogs].reverse()
+      recentLogs: [...filteredLogs].reverse(),
+      vehicleServices,
+      vehicleExpenses: filteredExpenses,
+      otherCostsTotal: otherCostsSum.toFixed(2),
+      totalTco: totalTcoSum.toFixed(2),
+      costPerKm,
+      costPer100KmFuel,
+      vatDeductibleTotal,
+      netBusinessCost: totalBusinessNet.toFixed(2),
+      ecoAdvice,
+      alerts
     };
-  }, [activeVehicle, logs, timeFilter, user]);
+  }, [activeVehicle, logs, serviceLogs, expenseLogs, timeFilter, tripFilter, vatDeductionMode, user]);
+
+  // --- MODUŁ 3: EKSPORT DO EXCEL (CSV) ORAZ DRUKOWANIE RAPORTU PDF ---
+  const handleExportCSV = () => {
+    if (!activeVehicle) return;
+    const headers = ['Data', 'Typ wpisu', 'Kategoria / Paliwo', 'Tryb (Prywatne/Sluzbowe)', 'Przebieg (km)', 'Dystans odcinka (km)', 'Ilosc (L)', 'Kwota Brutto (PLN)', 'Kwota Netto (PLN)', 'VAT do odliczenia (PLN)', 'Uwagi / Trasa'];
+    
+    const rows = [];
+    stats.recentLogs.forEach(l => {
+      const gross = Number(l.totalCost || 0);
+      const net = gross / 1.23;
+      const vat = (gross - net) * (l.tripType === 'business' ? vatDeductionMode / 100 : 0);
+      rows.push([
+        l.date,
+        'Tankowanie',
+        l.fuelType,
+        l.tripType === 'business' ? 'Sluzbowe' : 'Prywatne',
+        l.odometer,
+        l.segmentDistance || 0,
+        l.liters,
+        gross.toFixed(2),
+        net.toFixed(2),
+        vat.toFixed(2),
+        `"${(l.tripNotes || '').replace(/"/g, '""')}"`
+      ]);
+    });
+
+    stats.vehicleExpenses.forEach(e => {
+      const gross = Number(e.amount || 0);
+      const net = gross / 1.23;
+      const vat = (gross - net) * (e.tripType === 'business' ? vatDeductionMode / 100 : 0);
+      rows.push([
+        e.date,
+        'Wydatek TCO',
+        e.category,
+        e.tripType === 'business' ? 'Sluzbowe' : 'Prywatne',
+        '-',
+        '-',
+        '-',
+        gross.toFixed(2),
+        net.toFixed(2),
+        vat.toFixed(2),
+        `"${(e.title || '').replace(/"/g, '""')}"`
+      ]);
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Raport_OCTAN_${activeVehicle.plate}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintPDF = () => {
+    window.print();
+  };
 
   const monthlyLimit = userProfile?.monthlyLimit || 1000;
   const isOverBudget = parseFloat(stats.currentMonthCost) > monthlyLimit;
@@ -726,7 +1083,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 pb-24 md:pb-8">
       {/* Pasek górny */}
-      <header className="bg-zinc-900/80 backdrop-blur border-b border-zinc-800 sticky top-0 z-30">
+      <header className="bg-zinc-900/80 backdrop-blur border-b border-zinc-800 sticky top-0 z-30 print:hidden">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Fuel className="w-7 h-7 text-amber-500" />
@@ -765,7 +1122,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 pt-6">
         {/* Zmniejszony kafelek: Rządowe Limity Cen Paliw */}
-        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3.5 mb-6 text-zinc-100 shadow-md">
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3.5 mb-5 text-zinc-100 shadow-md print:hidden">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">🛡️</span>
@@ -797,9 +1154,32 @@ export default function App() {
           </div>
         </div>
 
+        {/* MODUŁ 1: Pasek ostrzeżeń o zbliżającym się końcu OC/AC, przeglądu lub wymianie oleju */}
+        {stats.alerts.length > 0 && (
+          <div className="space-y-2 mb-5 print:hidden">
+            {stats.alerts.map((al, idx) => (
+              <div
+                key={idx}
+                onClick={() => setActiveTab('service')}
+                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                  al.type === 'danger'
+                    ? 'bg-red-500/15 border-red-500/40 text-red-300'
+                    : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Wrench className="w-5 h-5 shrink-0" />
+                  <span className="text-xs sm:text-sm font-bold">{al.title}</span>
+                </div>
+                <span className="text-xs underline ml-2 shrink-0">Sprawdź →</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Alert przekroczenia budżetu miesięcznego */}
         {isOverBudget && (
-          <div className="mb-6 p-4 bg-red-500/15 border border-red-500/40 rounded-2xl flex items-center gap-4 text-red-300">
+          <div className="mb-5 p-4 bg-red-500/15 border border-red-500/40 rounded-2xl flex items-center gap-4 text-red-300 print:hidden">
             <AlertTriangle className="w-8 h-8 text-red-500 shrink-0" />
             <div>
               <h3 className="font-bold text-red-400">Przekroczono miesięczny limit wydatków na paliwo!</h3>
@@ -811,36 +1191,48 @@ export default function App() {
         )}
 
         {/* Nawigacja Desktop */}
-        <div className="hidden md:flex gap-2 mb-6 bg-zinc-900 p-1.5 rounded-2xl border border-zinc-800 w-fit">
+        <div className="hidden md:flex flex-wrap gap-2 mb-6 bg-zinc-900 p-1.5 rounded-2xl border border-zinc-800 w-fit print:hidden">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'dashboard' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'dashboard' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Pulpit i Analiza
           </button>
           <button
             onClick={() => setActiveTab('refuel')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'refuel' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'refuel' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Dodaj Tankowanie / OCR
           </button>
           <button
+            onClick={() => setActiveTab('service')}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'service' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <Wrench className="w-4 h-4" /> Serwis i Terminy
+          </button>
+          <button
+            onClick={() => setActiveTab('expenses')}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 ${activeTab === 'expenses' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <Receipt className="w-4 h-4" /> Wydatki TCO
+          </button>
+          <button
             onClick={() => setActiveTab('fleet')}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'fleet' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${activeTab === 'fleet' ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Moje Pojazdy ({myVehicles.length})
           </button>
           {isAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'admin' ? 'bg-amber-500 text-zinc-950' : 'text-amber-400 hover:text-amber-300'}`}
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2 ${activeTab === 'admin' ? 'bg-amber-500 text-zinc-950' : 'text-amber-400 hover:text-amber-300'}`}
             >
               <ShieldAlert className="w-4 h-4" /> Panel Admina
             </button>
           )}
         </div>
 
-        {/* ZAKŁADKA 1: PULPIT I ANALIZA */}
+        {/* ZAKŁADKA 1: PULPIT, RAPORTY PODATKOWE I DORADCA ECO-DRIVING */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             {myVehicles.length === 0 ? (
@@ -857,8 +1249,16 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* Filtry czasu i Limit miesięczny */}
-                <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center bg-zinc-900 border border-zinc-800 p-4 rounded-2xl">
+                {/* Nagłówek widoczny wyłącznie na wydruku PDF */}
+                <div className="hidden print:block border-b border-zinc-700 pb-4 mb-4">
+                  <h1 className="text-2xl font-bold">Raport Eksploatacji i Kilometrówki – OCTAN</h1>
+                  <p className="text-sm text-zinc-400">
+                    Pojazd: {activeVehicle?.name} ({activeVehicle?.plate}) • Stan licznika: {activeVehicle?.currentOdometer} km • Wygenerowano: {new Date().toLocaleDateString('pl-PL')}
+                  </p>
+                </div>
+
+                {/* Filtry czasu, Tryb Prywatne/Służbowe (Moduł 3) i Limit miesięczny */}
+                <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-zinc-900 border border-zinc-800 p-4 rounded-2xl print:hidden">
                   <div className="flex flex-wrap gap-2">
                     {[
                       { id: 'week', label: 'Ostatni tydzień' },
@@ -878,7 +1278,28 @@ export default function App() {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-zinc-800">
+                  {/* Filtr Kilometrówki: Wszystkie / Prywatne / Służbowe */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { id: 'all', label: 'Wszystkie trasy' },
+                      { id: 'private', label: '🏠 Prywatne' },
+                      { id: 'business', label: '💼 Służbowe (JDG)' }
+                    ].map(tf => (
+                      <button
+                        key={tf.id}
+                        onClick={() => setTripFilter(tf.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                          tripFilter === tf.id
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                            : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        {tf.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end border-t lg:border-t-0 pt-3 lg:pt-0 border-zinc-800">
                     <span className="text-xs text-zinc-400">
                       Limit miesięczny: <strong className="text-zinc-200">{stats.currentMonthCost} / {monthlyLimit} zł</strong>
                     </span>
@@ -911,7 +1332,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Karty statystyk */}
+                {/* Główne Karty Statystyk + TCO */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
                     <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
@@ -919,22 +1340,25 @@ export default function App() {
                       <DollarSign className="w-4 h-4 text-amber-500" />
                     </div>
                     <div className="text-2xl font-black text-zinc-100">{stats.cost} zł</div>
+                    <div className="text-[11px] text-zinc-500 mt-1">{stats.costPer100KmFuel} zł / 100 km</div>
                   </div>
 
                   <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
                     <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-                      <span>ZATANKOWANO</span>
-                      <Droplets className="w-4 h-4 text-amber-500" />
+                      <span>CAŁKOWITE TCO (Z SERWISEM)</span>
+                      <Receipt className="w-4 h-4 text-amber-500" />
                     </div>
-                    <div className="text-2xl font-black text-zinc-100">{stats.liters} L</div>
+                    <div className="text-2xl font-black text-zinc-100">{stats.totalTco} zł</div>
+                    <div className="text-[11px] text-zinc-500 mt-1">W tym serwis/dodatki: {stats.otherCostsTotal} zł</div>
                   </div>
 
                   <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
                     <div className="flex items-center justify-between text-zinc-400 text-xs mb-2">
-                      <span>DYSTANS</span>
+                      <span>DYSTANS ({stats.liters} L)</span>
                       <Gauge className="w-4 h-4 text-amber-500" />
                     </div>
                     <div className="text-2xl font-black text-zinc-100">{stats.distance} km</div>
+                    <div className="text-[11px] text-zinc-500 mt-1">Koszt 1 km (TCO): {stats.costPerKm} zł</div>
                   </div>
 
                   <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl">
@@ -943,6 +1367,84 @@ export default function App() {
                       <TrendingUp className="w-4 h-4 text-amber-500" />
                     </div>
                     <div className="text-2xl font-black text-amber-500">{stats.avgConsumption} <span className="text-sm font-normal text-zinc-400">l/100km</span></div>
+                    <div className="text-[11px] text-zinc-500 mt-1">Prognoza 30 dni: ~{stats.ecoAdvice?.projectedMonthlyCost} zł</div>
+                  </div>
+                </div>
+
+                {/* MODUŁ 4: Inteligentny Doradca Eco-Driving + MODUŁ 3: Panel Podatkowy i Eksport */}
+                <div className="grid md:grid-cols-2 gap-4 print:hidden">
+                  {/* Karta Eco-Driving */}
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-5 h-5 text-amber-400" />
+                          <h3 className="font-bold text-sm uppercase tracking-wider text-amber-400">Doradca Eco-Driving AI</h3>
+                        </div>
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold ${
+                          stats.ecoAdvice?.status === 'warning' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
+                        }`}>
+                          {stats.ecoAdvice?.status === 'warning' ? 'Wymaga uwagi' : 'Optymalnie'}
+                        </span>
+                      </div>
+                      <div className="font-bold text-zinc-100 mb-1.5">{stats.ecoAdvice?.headline}</div>
+                      <p className="text-xs text-zinc-400 leading-relaxed">{stats.ecoAdvice?.tip}</p>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-400">
+                      <span>Szacowany koszt paliwa na 100 km:</span>
+                      <strong className="text-amber-400">{stats.costPer100KmFuel} zł</strong>
+                    </div>
+                  </div>
+
+                  {/* Karta Raportów Podatkowych (Kilometrówka / VAT / Eksport CSV i PDF) */}
+                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-5 h-5 text-amber-400" />
+                          <h3 className="font-bold text-sm uppercase tracking-wider text-amber-400">Raporty Podatkowe i Eksport (JDG)</h3>
+                        </div>
+                        <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                          {[50, 100].map(mode => (
+                            <button
+                              key={mode}
+                              onClick={() => setVatDeductionMode(mode)}
+                              className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                vatDeductionMode === mode ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400'
+                              }`}
+                            >
+                              VAT {mode}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 my-2">
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
+                          <div className="text-[11px] text-zinc-400">Koszty służbowe (Netto)</div>
+                          <div className="text-lg font-black text-zinc-100">{stats.netBusinessCost} zł</div>
+                        </div>
+                        <div className="bg-zinc-950 border border-zinc-800 p-3 rounded-xl">
+                          <div className="text-[11px] text-zinc-400">VAT do odliczenia ({vatDeductionMode}%)</div>
+                          <div className="text-lg font-black text-emerald-400">{stats.vatDeductibleTotal} zł</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={handleExportCSV}
+                        className="flex-1 bg-zinc-950 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition"
+                      >
+                        <Download className="w-4 h-4 text-amber-400" /> Pobierz Excel (CSV)
+                      </button>
+                      <button
+                        onClick={handlePrintPDF}
+                        className="flex-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition"
+                      >
+                        <Printer className="w-4 h-4" /> Drukuj / Raport PDF
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -956,20 +1458,33 @@ export default function App() {
                       {stats.recentLogs.map(log => (
                         <div key={log.id} className="flex items-center justify-between bg-zinc-950 border border-zinc-800/80 p-4 rounded-xl">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="px-2 py-0.5 text-xs font-bold rounded bg-amber-500/20 text-amber-400">
                                 {log.fuelType}
                               </span>
+                              <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${
+                                log.tripType === 'business'
+                                  ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                                  : 'bg-zinc-900 text-zinc-400 border-zinc-800'
+                              }`}>
+                                {log.tripType === 'business' ? '💼 SŁUŻBOWE' : '🏠 PRYWATNE'}
+                              </span>
                               <span className="font-bold text-zinc-200">{log.totalCost} zł</span>
                               <span className="text-xs text-zinc-400">({log.liters} L × {log.pricePerLiter} zł)</span>
+                              {log.segmentConsumption && log.segmentConsumption > 0 && log.segmentConsumption < 40 && (
+                                <span className="text-xs text-amber-400 font-semibold">
+                                  • {log.segmentConsumption.toFixed(2)} l/100km
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-zinc-500 mt-1">
-                              Przebieg: {log.odometer} km • {log.date} {log.time} • {log.isFullTank ? 'Do pełna' : 'Częściowe'}
+                              Przebieg: {log.odometer} km {log.segmentDistance ? `(+${log.segmentDistance} km)` : ''} • {log.date} {log.time} • {log.isFullTank ? 'Do pełna' : 'Częściowe'}
+                              {log.tripNotes && <span className="text-zinc-300"> • Trasa: {log.tripNotes}</span>}
                             </div>
                           </div>
                           <button
                             onClick={() => deleteDoc(doc(db, 'fuelLogs', log.id))}
-                            className="p-2 text-zinc-500 hover:text-red-400"
+                            className="p-2 text-zinc-500 hover:text-red-400 print:hidden"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1043,6 +1558,44 @@ export default function App() {
                 ) : (
                   <div className="text-xs text-zinc-400">
                     Domyślne paliwo pojazdu: <strong className="text-amber-400">{activeVehicle?.fuelConfig}</strong>
+                  </div>
+                )}
+
+                {/* MODUŁ 3: Wybór charakteru jazdy (Prywatne vs Służbowe) */}
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Charakter tankowania (Kilometrówka / JDG)</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setTripType('private')}
+                      className={`py-2 rounded-xl font-bold text-xs border ${
+                        tripType === 'private' ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
+                      }`}
+                    >
+                      🏠 Prywatne
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTripType('business')}
+                      className={`py-2 rounded-xl font-bold text-xs border ${
+                        tripType === 'business' ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
+                      }`}
+                    >
+                      💼 Służbowe (Faktura / VAT)
+                    </button>
+                  </div>
+                </div>
+
+                {tripType === 'business' && (
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Cel wyjazdu / Trasa (do ewidencji przebiegu)</label>
+                    <input
+                      type="text"
+                      value={tripNotes}
+                      onChange={(e) => setTripNotes(e.target.value)}
+                      placeholder="np. Dojazd do klienta Poznań – Warszawa, nr faktury"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                    />
                   </div>
                 )}
 
@@ -1155,6 +1708,362 @@ export default function App() {
                   {isSubmitting ? 'Zapisywanie...' : 'Zapisz tankowanie'}
                 </button>
               </form>
+            </div>
+          )
+        )}
+
+        {/* MODUŁ 1: ZAKŁADKA SERWIS I TERMINY (OC/AC, PRZEGLĄD, KSIĄŻKA SERWISOWA) */}
+        {activeTab === 'service' && (
+          !activeVehicle ? (
+            <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+              <Car className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-zinc-100 mb-6">
+                Dodaj pojazd w zakładce Flota, aby zarządzać terminami OC/AC i książką serwisową
+              </h2>
+              <button onClick={() => setActiveTab('fleet')} className="bg-amber-500 text-zinc-950 font-bold px-6 py-3 rounded-xl">
+                Przejdź do dodawania pojazdu
+              </button>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                {/* Karta Terminów OC/AC i Przeglądu */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-amber-500" /> Terminy Ubezpieczenia i Przeglądu ({activeVehicle.name})
+                  </h2>
+                  <form onSubmit={handleSaveVehicleDates} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Ważność polisy OC/AC</label>
+                        <input
+                          type="date"
+                          value={insuranceExpiryInput}
+                          onChange={(e) => setInsuranceExpiryInput(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Ważność przeglądu techn.</label>
+                        <input
+                          type="date"
+                          value={inspectionExpiryInput}
+                          onChange={(e) => setInspectionExpiryInput(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold py-2.5 rounded-xl text-xs transition">
+                      Zapisz daty ważności dokumentów
+                    </button>
+                  </form>
+                </div>
+
+                {/* Formularz nowego wpisu serwisowego */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Wrench className="w-5 h-5 text-amber-500" /> Dodaj wpis serwisowy / wymianę części
+                  </h2>
+                  <form onSubmit={handleAddServiceLog} className="space-y-4">
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Rodzaj serwisu / naprawy</label>
+                      <select
+                        value={serviceType}
+                        onChange={(e) => setServiceType(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                      >
+                        <option value="Wymiana oleju i filtrów">Wymiana oleju silnikowego i filtrów</option>
+                        <option value="Klocki i tarcze hamulcowe">Wymiana klocków / tarcz hamulcowych</option>
+                        <option value="Rozrząd / Paski osprzętu">Wymiana rozrządu / pasków</option>
+                        <option value="Serwis instalacji LPG">Serwis instalacji LPG / Filtry gazu</option>
+                        <option value="Świece zapłonowe / Cewki">Wymiana świec / układu zapłonowego</option>
+                        <option value="Olej w skrzyni biegów / Dyferencjale">Wymiana oleju w skrzyni biegów / napędzie</option>
+                        <option value="Serwis klimatyzacji">Serwis klimatyzacji</option>
+                        <option value="Inna naprawa warsztatowa">Inna naprawa mechaniczna</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Przebieg przy serwisie (km)</label>
+                        <input
+                          type="number"
+                          required
+                          value={serviceOdo}
+                          onChange={(e) => setServiceOdo(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Koszt robocizny i części (zł)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={serviceCost}
+                          onChange={(e) => setServiceCost(e.target.value)}
+                          placeholder="np. 450.00"
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-amber-400 mb-1">Następna wymiana przy (km)</label>
+                        <input
+                          type="number"
+                          value={nextServiceOdo}
+                          onChange={(e) => setNextServiceOdo(e.target.value)}
+                          placeholder={`np. ${(parseFloat(serviceOdo) || activeVehicle.currentOdometer || 0) + 10000}`}
+                          className="w-full bg-zinc-950 border border-amber-500/40 rounded-xl px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-400 mb-1">Data wykonania</label>
+                        <input
+                          type="date"
+                          required
+                          value={serviceDate}
+                          onChange={(e) => setServiceDate(e.target.value)}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Szczegóły (np. marka oleju 5W30, wymienione części)</label>
+                      <input
+                        type="text"
+                        value={serviceNotes}
+                        onChange={(e) => setServiceNotes(e.target.value)}
+                        placeholder="np. Motul 5W30 + filtr Mann"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold py-3 rounded-xl transition">
+                      Zapisz w książce serwisowej
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Lista Historii Serwisowej */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                <h2 className="text-lg font-bold mb-4">Książka serwisowa – {activeVehicle.name}</h2>
+                {stats.vehicleServices.length === 0 ? (
+                  <p className="text-sm text-zinc-500">Brak wpisów serwisowych dla tego pojazdu.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {stats.vehicleServices.map(s => {
+                      const currentOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
+                      const kmRemaining = s.nextTargetOdo ? s.nextTargetOdo - currentOdo : null;
+                      return (
+                        <div key={s.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-zinc-100 text-sm">{s.serviceType}</span>
+                              <span className="text-xs font-bold text-amber-400">{Number(s.cost).toFixed(2)} zł</span>
+                            </div>
+                            <div className="text-xs text-zinc-400 mt-1">
+                              Data: {s.date} • Przebieg: {s.odometer} km
+                            </div>
+                            {s.notes && <div className="text-xs text-zinc-300 mt-1">{s.notes}</div>}
+                            {kmRemaining !== null && (
+                              <div className={`text-[11px] font-bold mt-1.5 inline-block px-2 py-0.5 rounded ${
+                                kmRemaining <= 1000 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/15 text-emerald-400'
+                              }`}>
+                                Kolejny serwis przy {s.nextTargetOdo} km (pozostało: {kmRemaining} km)
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => deleteDoc(doc(db, 'serviceLogs', s.id))}
+                            className="p-2 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* MODUŁ 2: ZAKŁADKA WYDATKI DODATKOWE (TCO) ZE SKANEREM PARAGONÓW */}
+        {activeTab === 'expenses' && (
+          !activeVehicle ? (
+            <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+              <Car className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+              <h2 className="text-lg font-bold text-zinc-100 mb-6">
+                Dodaj pojazd w zakładce Flota, aby rejestrować koszty dodatkowe TCO
+              </h2>
+              <button onClick={() => setActiveTab('fleet')} className="bg-amber-500 text-zinc-950 font-bold px-6 py-3 rounded-xl">
+                Przejdź do dodawania pojazdu
+              </button>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-amber-500" /> Dodaj wydatek pozapaliwowy (TCO)
+                </h2>
+
+                {/* Skaner AI dla faktur i paragonów kosztowych */}
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 rounded-2xl p-4 cursor-pointer transition mb-4">
+                  <Camera className="w-7 h-7 text-amber-500 mb-1" />
+                  <span className="font-bold text-amber-400 text-xs">
+                    {expOcrLoading ? 'Odczytywanie kwoty z paragonu...' : '📷 Zeskanuj paragon/fakturę (Myjnia, Części, Autostrada)'}
+                  </span>
+                  <input type="file" accept="image/*" onChange={handleExpenseReceiptUpload} className="hidden" />
+                </label>
+
+                {expOcrStatus && (
+                  <div className="mb-4 p-2.5 bg-zinc-950 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                    {expOcrStatus}
+                  </div>
+                )}
+
+                <form onSubmit={handleAddExpenseLog} className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Kategoria wydatku</label>
+                    <select
+                      value={expCategory}
+                      onChange={(e) => setExpCategory(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                    >
+                      <option value="Myjnia / Kosmetyka">Myjnia / Kosmetyka / Płyny</option>
+                      <option value="Autostrady / Parking / e-TOLL">Autostrady / Bramki / Parking</option>
+                      <option value="Części / Opony / Akcesoria">Części zamienne / Opony / Akcesoria</option>
+                      <option value="Ubezpieczenie OC/AC / Przegląd">Ubezpieczenie OC/AC / Badanie techniczne</option>
+                      <option value="Serwis / Robocizna">Serwis / Mechanik</option>
+                      <option value="Inne wydatki">Inne wydatki eksploatacyjne</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Kwota brutto (zł)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={expAmount}
+                        onChange={(e) => setExpAmount(e.target.value)}
+                        placeholder="np. 45.00"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-1">Data wydatku</label>
+                      <input
+                        type="date"
+                        required
+                        value={expDate}
+                        onChange={(e) => setExpDate(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Opis wydatku</label>
+                    <input
+                      type="text"
+                      value={expTitle}
+                      onChange={(e) => setExpTitle(e.target.value)}
+                      placeholder="np. Myjnia bezdotykowa + płyn zimowy"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpTripType('private')}
+                      className={`py-2 rounded-xl font-bold text-xs border ${
+                        expTripType === 'private' ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
+                      }`}
+                    >
+                      🏠 Wydatek Prywatny
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpTripType('business')}
+                      className={`py-2 rounded-xl font-bold text-xs border ${
+                        expTripType === 'business' ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
+                      }`}
+                    >
+                      💼 Koszt Firmowy (VAT)
+                    </button>
+                  </div>
+
+                  <button type="submit" className="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold py-3 rounded-xl transition">
+                    Dodaj wydatek do TCO
+                  </button>
+                </form>
+              </div>
+
+              {/* Podsumowanie TCO i historia wydatków */}
+              <div className="space-y-6">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <h3 className="font-bold text-base mb-3">Struktura kosztów utrzymania (TCO)</h3>
+                  <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                    <span>Paliwo: {stats.cost} zł</span>
+                    <span>Serwis i dodatki: {stats.otherCostsTotal} zł</span>
+                  </div>
+                  <div className="w-full h-3 bg-zinc-950 rounded-full overflow-hidden flex border border-zinc-800">
+                    <div
+                      style={{
+                        width: `${parseFloat(stats.totalTco) > 0 ? (parseFloat(stats.cost) / parseFloat(stats.totalTco)) * 100 : 100}%`
+                      }}
+                      className="bg-amber-500 h-full"
+                      title="Udział paliwa"
+                    />
+                    <div className="bg-blue-500 h-full flex-1" title="Udział serwisu i opłat" />
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+                  <h2 className="text-lg font-bold mb-4">Zarejestrowane wydatki dodatkowe</h2>
+                  {stats.vehicleExpenses.length === 0 ? (
+                    <p className="text-sm text-zinc-500">Brak dodatkowych wydatków w tym okresie.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {stats.vehicleExpenses.map(exp => (
+                        <div key={exp.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">
+                                {exp.category}
+                              </span>
+                              <span className="font-bold text-zinc-100">{Number(exp.amount).toFixed(2)} zł</span>
+                              {exp.tripType === 'business' && (
+                                <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-bold">
+                                  💼 FIRMA
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-zinc-400 mt-1">
+                              {exp.title} • {exp.date}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteDoc(doc(db, 'expenseLogs', exp.id))}
+                            className="p-2 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )
         )}
@@ -1342,19 +2251,25 @@ export default function App() {
       </main>
 
       {/* Dolny pasek nawigacji na telefony */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 flex justify-around py-3 z-30">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center text-xs ${activeTab === 'dashboard' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <TrendingUp className="w-5 h-5 mb-1" /> Pulpit
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 flex justify-around py-2.5 z-30 print:hidden">
+        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center text-[11px] ${activeTab === 'dashboard' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <TrendingUp className="w-5 h-5 mb-0.5" /> Pulpit
         </button>
-        <button onClick={() => setActiveTab('refuel')} className={`flex flex-col items-center text-xs ${activeTab === 'refuel' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Camera className="w-5 h-5 mb-1" /> Tankuj / OCR
+        <button onClick={() => setActiveTab('refuel')} className={`flex flex-col items-center text-[11px] ${activeTab === 'refuel' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Camera className="w-5 h-5 mb-0.5" /> Tankuj
         </button>
-        <button onClick={() => setActiveTab('fleet')} className={`flex flex-col items-center text-xs ${activeTab === 'fleet' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Car className="w-5 h-5 mb-1" /> Pojazdy
+        <button onClick={() => setActiveTab('service')} className={`flex flex-col items-center text-[11px] ${activeTab === 'service' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Wrench className="w-5 h-5 mb-0.5" /> Serwis
+        </button>
+        <button onClick={() => setActiveTab('expenses')} className={`flex flex-col items-center text-[11px] ${activeTab === 'expenses' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Receipt className="w-5 h-5 mb-0.5" /> TCO
+        </button>
+        <button onClick={() => setActiveTab('fleet')} className={`flex flex-col items-center text-[11px] ${activeTab === 'fleet' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Car className="w-5 h-5 mb-0.5" /> Flota
         </button>
         {isAdmin && (
-          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center text-xs ${activeTab === 'admin' ? 'text-amber-500' : 'text-zinc-400'}`}>
-            <ShieldAlert className="w-5 h-5 mb-1" /> Admin
+          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center text-[11px] ${activeTab === 'admin' ? 'text-amber-500' : 'text-zinc-400'}`}>
+            <ShieldAlert className="w-5 h-5 mb-0.5" /> Admin
           </button>
         )}
       </nav>
