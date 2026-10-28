@@ -335,7 +335,7 @@ export default function App() {
     }
   };
 
-  // --- ZAPIS TANKOWANIA Z PANCERNĄ BLOKADĄ DUPLIKATÓW ---
+  // --- ZAPIS TANKOWANIA Z PANCERNĄ BLOKADĄ I AUTO-ODŚWIEŻENIEM ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle || isSubmitting) return;
@@ -378,16 +378,13 @@ export default function App() {
         });
       }
 
-      setPricePerLiter('');
-      setTotalCost('');
-      setLiters('');
-      setOdometer('');
-      setOcrStatus('Tankowanie zostało pomyślnie zapisane!');
+      // Automatyczny powrót i odświeżenie strony
       setActiveTab('dashboard');
+      window.location.reload();
+
     } catch (error) {
       console.error("Błąd podczas zapisu tankowania:", error);
       alert('Nie udało się zapisać tankowania.');
-    } finally {
       setIsSubmitting(false);
     }
   };
