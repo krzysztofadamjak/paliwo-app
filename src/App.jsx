@@ -263,16 +263,17 @@ export default function App() {
     });
   };
 
-  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (STABILNY MODEL Z TIMEOUTEM) ---
+
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (ZABEZPIECZONY PRZED ZAWIESZENIEM) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Oficjalnie wspierany model dla obrazów (Gemini nie posiada 3.8-flash)
+    // Używamy stabilnego i w pełni wspieranego modelu gemini-1.5-flash
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-    // Zabezpieczenie przed zawieszeniem się aplikacji (limit 15 sekund)
+    // Blokada czasowa (Timeout) - przerywa połączenie, jeśli Google nie odpowie w 15s
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -280,7 +281,7 @@ export default function App() {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
+        signal: controller.signal, // Podpięcie bezpiecznika
         body: JSON.stringify({
           contents: [{
             parts: [
@@ -295,21 +296,22 @@ export default function App() {
         })
       });
 
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId); // Sukces - wyłączamy bezpiecznik
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+        throw new Error(errData?.error?.message || `Błąd API Google (Kod ${response.status})`);
       }
 
       const result = await response.json();
       const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
       const cleanedJson = rawText.replace(/```json|```/g, '').trim();
       return JSON.parse(cleanedJson);
+
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        throw new Error('Przekroczono czas oczekiwania na odpowiedź serwera Gemini (15 sekund).');
+        throw new Error('Serwer Google nie odpowiedział w ciągu 15 sekund.');
       }
       throw err;
     }
