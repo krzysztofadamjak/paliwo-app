@@ -41,9 +41,6 @@ const db = getFirestore(app);
 
 const ADMIN_EMAIL = '98krzychu@gmail.com';
 
-// --- ZASZYTY KLUCZ API GEMINI (FALLBACK OCR) ---
-const GEMINI_API_KEY = "AQ.Ab8RN6LD6KQKGvkfk0mj-0_GHDJZXzUH2Bk_I3Gy_Sr7pRCpyA";
-
 export default function App() {
   // --- STANY AUTORYZACJI I UŻYTKOWNIKA ---
   const [user, setUser] = useState(null);
@@ -237,7 +234,7 @@ export default function App() {
     }
   };
 
-  // Konwersja i kompresja obrazu (zmniejsza zużycie tokenów o ~70%)
+  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -245,13 +242,11 @@ export default function App() {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200;
-          const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
+          canvas.width = img.width;
+          canvas.height = img.height;
           const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
           const base64String = dataUrl.split(',')[1];
           resolve({ base64String, mimeType: 'image/jpeg' });
         };
@@ -263,84 +258,26 @@ export default function App() {
     });
   };
 
-  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI FALLBACK ---
-  const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
-    const prompt = type === 'odometer'
-      ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
-      : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
-
-    // Próbuje najpierw gemini-3.8-flash, a w razie potrzeby przechodzi na stabilne gemini-2.5-flash / gemini-2.0-flash
-    const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-    let lastError = null;
-
-    for (const modelName of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: base64String } }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
-          })
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `Błąd HTTP ${response.status} dla modelu ${modelName}`);
-        }
-
-        const result = await response.json();
-        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanedJson);
-      } catch (err) {
-        console.warn(` Próba modelu ${modelName} nie powiodła się, przełączam dalej...`, err.message);
-        lastError = err;
-      }
-    }
-
-    throw lastError || new Error('Wszystkie modele zapasowe Gemini zawiodły.');
-  };
-
-  // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
+  // --- OCR PARAGONU ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setOcrLoading(true);
-    setOcrStatus('Analizowanie paragonu przez AI (Groq)...');
+    setOcrStatus('Analizowanie paragonu przez AI...');
 
     try {
       const { base64String, mimeType } = await convertImageToJpeg(file);
-      let data = null;
-      let usedFallback = false;
+      
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64String, mimeType })
+      });
 
-      try {
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64String, mimeType })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Limit tokenów lub błąd serwera Groq (${response.status})`);
-        }
-        data = await response.json();
-      } catch (groqError) {
-        console.warn("Groq niedostępny / wyczerpano tokeny. Przełączam na zapasowe API Gemini...", groqError);
-        setOcrStatus('Wyczerpano limit Groq — przełączam na zapasowe AI Gemini...');
-        data = await callGeminiFallback(base64String, mimeType, 'receipt');
-        usedFallback = true;
-      }
+      if (!response.ok) throw new Error('Błąd serwera OCR');
+      
+      const data = await response.json();
 
       let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
       let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
@@ -384,7 +321,7 @@ export default function App() {
       if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
       if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
 
-      setOcrStatus(usedFallback ? 'Rozpoznano paragon (przez zapasowe API Gemini)!' : 'Rozpoznano dane z paragonu!');
+      setOcrStatus('Rozpoznano dane z paragonu!');
     } catch (error) {
       console.error("BŁĄD OCR:", error);
       setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
@@ -393,7 +330,7 @@ export default function App() {
     }
   };
 
-  // --- OCR LICZNIKÓW SAMOCHODU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
+  // --- OCR LICZNIKÓW SAMOCHODU ---
   const handleOdometerUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -403,33 +340,23 @@ export default function App() {
 
     try {
       const { base64String, mimeType } = await convertImageToJpeg(file);
-      let data = null;
-      let usedFallback = false;
+      
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          imageBase64: base64String, 
+          mimeType,
+          type: 'odometer' 
+        })
+      });
 
-      try {
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            imageBase64: base64String, 
-            mimeType,
-            type: 'odometer' 
-          })
-        });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Błąd serwera OCR');
 
-        const resData = await response.json();
-        if (!response.ok) throw new Error(resData.error || 'Błąd serwera OCR Groq');
-        data = resData;
-      } catch (groqError) {
-        console.warn("Groq niedostępny / wyczerpano tokeny. Przełączam skaner licznika na API Gemini...", groqError);
-        setOcrStatus('Wyczerpano limit Groq — odczytuję licznik przez Gemini AI...');
-        data = await callGeminiFallback(base64String, mimeType, 'odometer');
-        usedFallback = true;
-      }
-
-      if (data && data.mileage && data.mileage > 0) {
+      if (data.mileage && data.mileage > 0) {
         setOdometer(String(data.mileage));
-        setOcrStatus(usedFallback ? 'Pomyślnie odczytano przebieg (przez Gemini AI)!' : 'Pomyślnie odczytano przebieg ze zdjęcia!');
+        setOcrStatus('Pomyślnie odczytano przebieg ze zdjęcia!');
       } else {
         setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
       }
@@ -449,7 +376,7 @@ export default function App() {
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
-    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu
+    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu[cite: 1]
     if (currentOdo <= minOdo) {
       alert(`Wprowadzony przebieg (${currentOdo} km) nie może być mniejszy lub równy poprzedniemu (${minOdo} km)!`);
       return;
@@ -937,7 +864,7 @@ export default function App() {
         {activeTab === 'refuel' && (
           <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR + Gemini Fallback)
+              <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR)
             </h2>
 
             {/* Przycisk Skanowania Paragonu */}
