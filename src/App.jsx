@@ -196,7 +196,7 @@ export default function App() {
     }
   };
 
-  // Pomocnicza funkcja konwertująca obraz na JPEG
+  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64 (eliminująca błąd "invalid image")
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -240,6 +240,7 @@ export default function App() {
       if (!response.ok) throw new Error('Błąd serwera OCR');
       
       const data = await response.json();
+      console.log("Otrzymane dane OCR:", data);
 
       let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
       let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
@@ -314,7 +315,11 @@ export default function App() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Błąd serwera OCR');
+      console.log("Odpowiedź serwera OCR licznika:", data);
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Błąd serwera OCR');
+      }
 
       if (data.mileage && data.mileage > 0) {
         setOdometer(String(data.mileage));
@@ -323,17 +328,24 @@ export default function App() {
         setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
       }
     } catch (error) {
-      console.error("BŁĄD OCR Licznika:", error);
+      console.error("BŁĄD OCR Licznika (szczegóły):", error);
       setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
     } finally {
       setOdometerOcrLoading(false);
     }
   };
 
-  // --- ZAPIS TANKOWANIA Z BLOKADĄ PODWÓJNEGO KLIKNIĘCIA ---
+  // --- ZAPIS TANKOWANIA Z PANCERNĄ BLOKADĄ DUPLIKATÓW ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
-    if (!activeVehicle || isSubmitting) return; // Zapobiega wielokrotnemu dodaniu
+    if (!activeVehicle || isSubmitting) return;
+
+    const nowTime = Date.now();
+    if (window._lastSubmitTime && nowTime - window._lastSubmitTime < 3000) {
+      console.warn("Zablokowano próbę podwójnego zapisu.");
+      return;
+    }
+    window._lastSubmitTime = nowTime;
 
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
@@ -343,10 +355,9 @@ export default function App() {
       return;
     }
 
-    setIsSubmitting(true); // Zablokowanie przycisku zapisu
+    setIsSubmitting(true);
 
     try {
-      // Zapis do Firestore (Firebase sam zaktualizuje stan przez onSnapshot)
       await addDoc(collection(db, 'fuelLogs'), {
         userId: user.uid,
         vehicleId: activeVehicle.id,
@@ -367,7 +378,6 @@ export default function App() {
         });
       }
 
-      // Wyczyszczenie formularza
       setPricePerLiter('');
       setTotalCost('');
       setLiters('');
@@ -378,7 +388,7 @@ export default function App() {
       console.error("Błąd podczas zapisu tankowania:", error);
       alert('Nie udało się zapisać tankowania.');
     } finally {
-      setIsSubmitting(false); // Odblokowanie przycisku
+      setIsSubmitting(false);
     }
   };
 
