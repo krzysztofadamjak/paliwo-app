@@ -733,8 +733,8 @@ export default function App() {
         cost: '0.00', liters: '0.00', distance: 0, avgConsumption: '0.00',
         currentMonthCost: '0.00', recentLogs: [], vehicleServices: [], vehicleExpenses: [],
         otherCostsTotal: '0.00', totalTco: '0.00', costPerKm: '0.00', costPer100KmFuel: '0.00',
-        vatDeductibleTotal: '0.00', netBusinessCost: '0.00',
-        ecoAdvice: null, alerts: [], categoryBreakdown: {}
+        vatDeductibleTotal: '0.00', netBusinessCost: '0.00', estimatedCarValue: '0.00',
+        depreciationTotal: '0.00', ecoAdvice: null, alerts: []
       };
     }
 
@@ -753,12 +753,12 @@ export default function App() {
       return t === tripFilter;
     };
 
-    // Logi paliwowe
+    // KLUCZowa zmiana: Sortujemy logi ściśle po dacie (od najstarszego do najnowszego)
     const allVehicleFuelLogs = logs
       .filter(l => l.vehicleId === activeVehicle.id)
-      .sort((a, b) => a.odometer - b.odometer);
+      .sort((a, b) => new Date(`${a.date}T${a.time || '00:00'}`) - new Date(`${b.date}T${b.time || '00:00'}`));
 
-    // Wyliczanie jednostkowego spalania między tankowaniami dla doradcy Eco-Driving
+    // Wyliczanie jednostkowego spalania między poprawnie posortowanymi tankowaniami
     const logsWithSingleConsumption = allVehicleFuelLogs.map((log, index) => {
       if (index === 0) {
         const distFromInit = log.odometer - (activeVehicle.initialOdometer || log.odometer);
