@@ -14,13 +14,11 @@ export default async function handler(req, res) {
     ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
     : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-  // KASKADA MODELI GROQ — każdy ma osobną dzienną pulę darmowych tokenów (TPD)!
+  // Aktualne modele wizyjne Groq (bez wycofanych modeli llama-3.2)
   const groqVisionModels = [
     'meta-llama/llama-4-scout-17b-16e-instruct',
     'meta-llama/llama-4-maverick-17b-128e-instruct',
-    'qwen/qwen3.8-27b',
-    'llama-3.2-90b-vision-preview',
-    'llama-3.2-11b-vision-preview'
+    'qwen/qwen3.8-27b'
   ];
 
   let lastError = null;
@@ -63,15 +61,12 @@ export default async function handler(req, res) {
       const cleaned = content.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
-      // Zwracamy wynik oraz informację, który model zadziałał
       return res.status(200).json({ ...parsed, _modelUsed: model });
     } catch (err) {
-      console.warn(`[Groq Fallback] Model ${model} niedostępny/wyczerpany:`, err.message);
+      console.warn(`[Groq Fallback] Model ${model} niedostępny:`, err.message);
       lastError = err;
-      // Pętla automatycznie przechodzi do kolejnego modelu z osobnym limitem!
     }
   }
 
-  // Jeśli wszystkie modele na Groq zawiodą, zwracamy 500, co uruchomi Gemini w App.jsx
-  return res.status(500).json({ error: lastError?.message || 'Wyczerpano limity wszystkich modeli Groq' });
+  return res.status(500).json({ error: lastError?.message || 'Wszystkie modele Groq niedostępne' });
 }

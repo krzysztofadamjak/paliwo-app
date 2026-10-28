@@ -263,25 +263,62 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (MODEL 3.8-FLASH + AUTO-RETRY PRZY PRZECIĄŻENIU 503) ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (Z AUTOMATYCZNYM WYKRYWANIEM DOSTĘPNYCH MODELI) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Jedyny model akceptowany przez Twoje nowe konto Google API: gemini-3.8-flash
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // 1. Pobieramy bezpośrednio od Google listę modeli przypisanych do Twojego klucza API
+    let candidateModels = [];
+    try {
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        candidateModels = (listData.models || [])
+          .filter(m => 
+            m.supportedGenerationMethods?.includes('generateContent') &&
+            m.name.includes('gemini') &&
+            !m.name.includes('embedding') &&
+            !m.name.includes('imagen') &&
+            !m.name.includes('veo') &&
+            !m.name.includes('tts') &&
+            !m.name.includes('audio')
+          )
+          .map(m => m.name.replace('models/', ''));
 
-    // Do 3 automatycznych prób w razie chwilowego przeciążenia serwerów Google (błąd 503)
-    for (let attempt = 1; attempt <= 3; attempt++) {
+        // Sortujemy tak, aby najpierw próbować szybkich modeli (lite / flash / pro)
+        candidateModels.sort((a, b) => {
+          const score = (name) => name.includes('lite') ? 1 : name.includes('flash') ? 2 : name.includes('pro') ? 3 : 4;
+          return score(a) - score(b);
+        });
+        console.log('[Gemini Auto-Discovery] Wykryte modele na koncie:', candidateModels);
+      }
+    } catch (e) {
+      console.warn('Nie udało się pobrać listy modeli, używam listy awaryjnej:', e);
+    }
+
+    // Jeśli z jakiegoś powodu lista się nie pobrała, mamy szeroką listę zapasową
+    if (candidateModels.length === 0) {
+      candidateModels = [
+        'gemini-3.8-flash-lite',
+        'gemini-3.8-pro',
+        'gemini-3.8-flash',
+        'gemini-flash-latest',
+        'gemini-pro-latest'
+      ];
+    }
+
+    let lastError = null;
+
+    // 2. Próbujemy po kolei wykryte modele — jeśli jeden ma błąd 503 (High Demand), kolejny zadziała!
+    for (const modelName of candidateModels) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       try {
-        if (attempt > 1) {
-          setOcrStatus(`Serwer Google zajęty — ponawiam próbę (${attempt}/3)...`);
-          await new Promise(res => setTimeout(res, 2000)); // Odczekaj 2 sekundy przed ponowieniem
-        }
+        setOcrStatus(`Analizowanie przez AI (${modelName})...`);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
         const response = await fetch(url, {
           method: 'POST',
@@ -303,31 +340,24 @@ export default function App() {
 
         clearTimeout(timeoutId);
 
-        // Jeśli Google zwróci 503 (High demand) lub 429, przejdź do kolejnej próby w pętli
-        if ((response.status === 503 || response.status === 429) && attempt < 3) {
-          console.warn(`Gemini 3.8 Flash przeciążone (kod ${response.status}), próba ${attempt}/3...`);
-          continue;
-        }
-
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
+          throw new Error(errData?.error?.message || `Kod HTTP ${response.status}`);
         }
 
         const result = await response.json();
         const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
         const cleanedJson = rawText.replace(/```json|```/g, '').trim();
+        console.log(`[Gemini Sukces] Odczytano za pomocą modelu: ${modelName}`);
         return JSON.parse(cleanedJson);
       } catch (err) {
         clearTimeout(timeoutId);
-        if (attempt === 3) {
-          if (err.name === 'AbortError') {
-            throw new Error('Przekroczono czas oczekiwania na odpowiedź serwera Gemini (15s).');
-          }
-          throw err;
-        }
+        console.warn(`[Gemini] Model ${modelName} odrzucił zapytanie (${err.message}), przełączam na następny...`);
+        lastError = err;
       }
     }
+
+    throw lastError || new Error('Wszystkie dostępne modele AI są w tej chwili zajęte.');
   };
 
   // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
