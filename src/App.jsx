@@ -269,11 +269,11 @@ export default function App() {
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Paragony -> gemini-1.5-flash, Licznik -> gemini-3.8-flash[cite: 6]
+    // Licznik -> gemini-3.8-flash, Paragony -> gemini-1.5-flash (na poprawnym endpointcie v1)
     const modelName = type === 'odometer' ? 'gemini-3.8-flash' : 'gemini-1.5-flash';
     
-    // Użycie poprawnej ścieżki v1beta dla obu wersji modeli
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+    // Użycie stabilnego endpointu v1 zamiast przestarzałego v1beta
+    const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
       method: 'POST',
