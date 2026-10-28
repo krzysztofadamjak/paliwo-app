@@ -263,14 +263,16 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI FALLBACK (ROZDZIELONY DLA PARAGONÓW I LICZNIKA) ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (ROZDZIELONY DLA PARAGONÓW I LICZNIKA) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Wybór modelu zgodnie z życzeniem: licznik -> 3.8-flash, paragon -> 1.5-flash
+    // Paragony -> gemini-1.5-flash, Licznik -> gemini-3.8-flash[cite: 6]
     const modelName = type === 'odometer' ? 'gemini-3.8-flash' : 'gemini-1.5-flash';
+    
+    // Użycie poprawnej ścieżki v1beta dla obu wersji modeli
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
