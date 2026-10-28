@@ -71,7 +71,7 @@ export default function App() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrStatus, setOcrStatus] = useState('');
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Blokada przed podwójnym kliknięciem
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- STANY FORMULARZA POJAZDU ---
   const [editingVehicleId, setEditingVehicleId] = useState(null);
@@ -151,8 +151,8 @@ export default function App() {
   }, [user, isAdmin]);
 
   // Wybrany pojazd użytkownika
-  const myVehicles = useMemo(() => vehicles.filter(v => v.userId === user?.uid), [vehicles, user]);
-  const activeVehicle = useMemo(() => myVehicles.find(v => v.id === selectedVehicleId) || myVehicles[0], [myVehicles, selectedVehicleId]);
+  const myVehicles = useMemo(() => vehicles.filter(v => v.userId === user?.userId), [vehicles, user]);
+  const activeVehicle = useMemo(() => vehicles.find(v => v.id === selectedVehicleId) || vehicles.filter(v => v.userId === user?.uid)[0], [vehicles, selectedVehicleId, user]);
 
   useEffect(() => {
     if (activeVehicle) {
@@ -196,7 +196,7 @@ export default function App() {
     }
   };
 
-  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64 (eliminująca błąd "invalid image")
+  // Pomocnicza funkcja konwertująca dowolny obraz na JPEG base64
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -240,7 +240,6 @@ export default function App() {
       if (!response.ok) throw new Error('Błąd serwera OCR');
       
       const data = await response.json();
-      console.log("Otrzymane dane OCR:", data);
 
       let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
       let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
@@ -315,11 +314,7 @@ export default function App() {
       });
 
       const data = await response.json();
-      console.log("Odpowiedź serwera OCR licznika:", data);
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Błąd serwera OCR');
-      }
+      if (!response.ok) throw new Error(data.error || 'Błąd serwera OCR');
 
       if (data.mileage && data.mileage > 0) {
         setOdometer(String(data.mileage));
@@ -328,30 +323,24 @@ export default function App() {
         setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
       }
     } catch (error) {
-      console.error("BŁĄD OCR Licznika (szczegóły):", error);
+      console.error("BŁĄD OCR Licznika:", error);
       setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
     } finally {
       setOdometerOcrLoading(false);
     }
   };
 
-  // --- ZAPIS TANKOWANIA Z PANCERNĄ BLOKADĄ I AUTO-ODŚWIEŻENIEM ---
+  // --- ZAPIS TANKOWANIA Z BLOKADĄ PRZEBIEGU (ZACHOWANA) ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle || isSubmitting) return;
 
-    const nowTime = Date.now();
-    if (window._lastSubmitTime && nowTime - window._lastSubmitTime < 3000) {
-      console.warn("Zablokowano próbę podwójnego zapisu.");
-      return;
-    }
-    window._lastSubmitTime = nowTime;
-
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
-    if (currentOdo <= 0) {
-      alert('Wprowadź prawidłowy przebieg pojazdu!');
+    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu
+    if (currentOdo <= minOdo) {
+      alert(`Wprowadzony przebieg (${currentOdo} km) nie może być mniejszy lub równy poprzedniemu (${minOdo} km)!`);
       return;
     }
 
@@ -372,11 +361,9 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
 
-      if (currentOdo > minOdo) {
-        await updateDoc(doc(db, 'vehicles', activeVehicle.id), {
-          currentOdometer: currentOdo
-        });
-      }
+      await updateDoc(doc(db, 'vehicles', activeVehicle.id), {
+        currentOdometer: currentOdo
+      });
 
       // Automatyczny powrót i odświeżenie strony
       setActiveTab('dashboard');
