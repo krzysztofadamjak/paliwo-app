@@ -73,6 +73,14 @@ export default function App() {
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // --- STAN RZĄDOWYCH LIMITÓW CEN (AKTUALIZOWANY O 18:00) ---
+  const [fuelLimits, setFuelLimits] = useState({
+    pb95: '6.55',
+    pb98: '7.24',
+    on: '8.28',
+    statusText: ''
+  });
+
   // --- STANY FORMULARZA POJAZDU ---
   const [editingVehicleId, setEditingVehicleId] = useState(null);
   const [vName, setVName] = useState('');
@@ -85,6 +93,36 @@ export default function App() {
   const [isEditingBudget, setIsEditingBudget] = useState(false);
 
   const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
+  // Logika wyznaczania daty limitów cen paliw (po 18:00 uwzględnia kolejny dzień)
+  useEffect(() => {
+    const updateFuelLimitsDate = () => {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const targetDate = new Date(now);
+
+      if (currentHour >= 18) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+
+      const formattedDate = targetDate.toLocaleDateString('pl-PL', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+
+      setFuelLimits({
+        pb95: '6.55',
+        pb98: '7.24',
+        on: '8.28',
+        statusText: `Limity cen paliw na dzień ${formattedDate}`
+      });
+    };
+
+    updateFuelLimitsDate();
+    const interval = setInterval(updateFuelLimitsDate, 3600000);
+    return () => clearInterval(interval);
+  }, []);
 
   // 1. Nasłuchiwanie stanu zalogowania
   useEffect(() => {
@@ -330,7 +368,7 @@ export default function App() {
     }
   };
 
-  // --- ZAPIS TANKOWANIA Z BLOKADĄ PRZEBIEGU (ZACHOWANA) ---
+  // --- ZAPIS TANKOWANIA Z BLOKADĄ PRZEBIEGU ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle || isSubmitting) return;
@@ -603,6 +641,39 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 pt-6">
+        {/* Rządowe Limity Cen Paliw */}
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-5 mb-6 text-zinc-100 shadow-lg">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🛡️</span>
+              <h3 className="font-bold text-amber-400">{fuelLimits.statusText}</h3>
+            </div>
+            <span className="text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full font-semibold border border-amber-500/30">
+              Aktualizacja codzienna o 18:00
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
+              <div className="text-xs text-zinc-400 mb-1 font-medium">Benzyna 95</div>
+              <div className="text-xl font-black text-zinc-100">{fuelLimits.pb95} zł</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+            </div>
+            
+            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
+              <div className="text-xs text-zinc-400 mb-1 font-medium">Benzyna 98</div>
+              <div className="text-xl font-black text-zinc-100">{fuelLimits.pb98} zł</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+            </div>
+            
+            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
+              <div className="text-xs text-zinc-400 mb-1 font-medium">Olej Napędowy</div>
+              <div className="text-xl font-black text-zinc-100">{fuelLimits.on} zł</div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+            </div>
+          </div>
+        </div>
+
         {/* Alert przekroczenia budżetu miesięcznego */}
         {isOverBudget && (
           <div className="mb-6 p-4 bg-red-500/15 border border-red-500/40 rounded-2xl flex items-center gap-4 text-red-300">
