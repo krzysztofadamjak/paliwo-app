@@ -263,14 +263,14 @@ export default function App() {
     });
   };
 
-// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (STABILNA WERSJA) ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (WYMUSZONY MODEL 3.8-FLASH) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    // Użycie najnowszego, stabilnego punktu wejścia dla Google Gemini
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // Zgodnie z wytycznymi z błędu API Google, używamy wyłącznie modelu gemini-3.8-flash na endpointcie v1beta
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -291,6 +291,7 @@ export default function App() {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
+      // Jeśli serwery będą znów przeciążone (błąd 503), aplikacja nie wybuchnie, tylko wyświetli komunikat w formularzu
       throw new Error(errData?.error?.message || `Błąd zapasowego API Google (Kod ${response.status})`);
     }
 
