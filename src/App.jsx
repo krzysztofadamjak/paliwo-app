@@ -263,51 +263,41 @@ export default function App() {
     });
   };
 
-  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI FALLBACK ---
+// --- ZAPASOWY SILNIK AI: GOOGLE GEMINI FALLBACK ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     const prompt = type === 'odometer'
       ? 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}'
       : 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
 
-    const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
-    let lastError = null;
+    // Użycie aktualnie wspieranego i stabilnego identyfikatora modelu
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-    for (const modelName of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                { inline_data: { mime_type: mimeType, data: base64String } }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
-          })
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `Błąd HTTP ${response.status} dla modelu ${modelName}`);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: base64String } }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json"
         }
+      })
+    });
 
-        const result = await response.json();
-        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-        return JSON.parse(cleanedJson);
-      } catch (err) {
-        console.warn(`Próba modelu ${modelName} nie powiodła się, przełączam dalej...`, err.message);
-        lastError = err;
-      }
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData?.error?.message || `Błąd HTTP ${response.status} w zapasowym API Gemini`);
     }
 
-    throw lastError || new Error('Wszystkie modele zapasowe Gemini zawiodły.');
+    const result = await response.json();
+    const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const cleanedJson = rawText.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleanedJson);
   };
 
   // --- OCR PARAGONU (Z AUTOMATYCZNYM PRZEŁĄCZANIEM NA GEMINI) ---
