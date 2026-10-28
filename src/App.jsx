@@ -151,8 +151,8 @@ export default function App() {
   }, [user, isAdmin]);
 
   // Wybrany pojazd użytkownika
-  const myVehicles = useMemo(() => vehicles.filter(v => v.userId === user?.userId), [vehicles, user]);
-  const activeVehicle = useMemo(() => vehicles.find(v => v.id === selectedVehicleId) || vehicles.filter(v => v.userId === user?.uid)[0], [vehicles, selectedVehicleId, user]);
+  const myVehicles = useMemo(() => vehicles.filter(v => v.userId === user?.uid), [vehicles, user]);
+  const activeVehicle = useMemo(() => vehicles.find(v => v.id === selectedVehicleId) || myVehicles[0], [vehicles, selectedVehicleId, myVehicles]);
 
   useEffect(() => {
     if (activeVehicle) {
@@ -338,7 +338,7 @@ export default function App() {
     const currentOdo = parseFloat(odometer);
     const minOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
-    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu
+    // BLOKADA PRZEBIEGU: Przebieg nie może być mniejszy lub równy poprzedniemu[cite: 1]
     if (currentOdo <= minOdo) {
       alert(`Wprowadzony przebieg (${currentOdo} km) nie może być mniejszy lub równy poprzedniemu (${minOdo} km)!`);
       return;
