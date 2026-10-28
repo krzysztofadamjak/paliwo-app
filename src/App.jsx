@@ -966,14 +966,14 @@ export default function App() {
                             <div className="text-xs text-zinc-500 mt-1">
                               Przebieg: {log.odometer} km • {log.date} {log.time} • {log.isFullTank ? 'Do pełna' : 'Częściowe'}
                             </div>
-                          </div>
-                          <button
-                            onClick={() => deleteDoc(doc(db, 'fuelLogs', log.id))}
-                            className="p-2 text-zinc-500 hover:text-red-400"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
                         </div>
+                        <button
+                          onClick={() => deleteDoc(doc(db, 'fuelLogs', log.id))}
+                          className="p-2 text-zinc-500 hover:text-red-400"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                       ))}
                     </div>
                   )}
@@ -1004,14 +1004,14 @@ export default function App() {
                 <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR + Gemini Fallback)
               </h2>
 
-              {/* Przycisk Skanowania Paragonu */}
+              {/* Przycisk Skanowania Paragonu (Wybór z galerii lub aparatu) */}
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 rounded-2xl p-6 cursor-pointer transition mb-6">
                 <Camera className="w-10 h-10 text-amber-500 mb-2" />
                 <span className="font-bold text-amber-400 text-sm">
-                  {ocrLoading ? 'Przetwarzanie paragonu...' : 'Zrób zdjęcie paragonu lub wybierz z galerii'}
+                  {ocrLoading ? 'Przetwarzanie paragonu...' : 'Zrób zdjęcie lub wybierz z galerii'}
                 </span>
                 <span className="text-xs text-zinc-400 mt-1">Automatycznie rozpozna kwotę, litry, datę oraz rodzaj paliwa</span>
-                <input type="file" accept="image/*" capture="environment" onChange={handleReceiptUpload} className="hidden" />
+                <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
               </label>
 
               {ocrStatus && (
@@ -1082,7 +1082,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* POLE PRZEBIEGU ORAZ DEDYKOWANY PRZYCISK OCR LICZNIKÓW AI */}
+              {/* POLE PRZEBIEGU ORAZ DEDYKOWANY PRZYCISK OCR LICZNIKÓW AI (Galeria / Aparat) */}
               <div>
                 <label className="block text-xs text-amber-400 font-bold mb-1">
                   Aktualny przebieg samochodu (km) — poprzednio: {activeVehicle?.currentOdometer || activeVehicle?.initialOdometer || 0} km
@@ -1100,7 +1100,6 @@ export default function App() {
                   <input
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     id="odometer-ocr-input"
                     className="hidden"
                     onChange={handleOdometerUpload}
@@ -1109,7 +1108,7 @@ export default function App() {
                     htmlFor="odometer-ocr-input"
                     className="inline-flex items-center justify-center w-full py-2.5 px-4 bg-zinc-950 hover:bg-zinc-800 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-xl cursor-pointer transition shadow-sm"
                   >
-                    {odometerOcrLoading ? '📷 Analizowanie licznika przez AI...' : '📷 Dodaj zdjęcie liczników OCR AI'}
+                    {odometerOcrLoading ? '📷 Analizowanie licznika przez AI...' : '📷 Wybierz zdjęcie licznika (Aparat / Galeria)'}
                   </label>
                 </div>
               </div>
@@ -1157,7 +1156,8 @@ export default function App() {
               </button>
             </form>
           </div>
-        ))}
+        )
+        )}
 
         {/* ZAKŁADKA 3: ZARZĄDZANIE FLOTĄ POJAZDÓW */}
         {activeTab === 'fleet' && (
@@ -1308,37 +1308,37 @@ export default function App() {
                           {u.blocked ? 'Odblokuj' : 'Zablokuj'}
                         </button>
                       )}
-                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Car className="w-6 h-6 text-amber-500" /> Wszystkie pojazdy w bazie ({vehicles.length})
-              </h2>
-              <div className="space-y-3">
-                {vehicles.map(v => (
-                  <div key={v.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between">
-                    <div>
-                      <div className="font-bold">{v.name} ({v.plate})</div>
-                      <div className="text-xs text-zinc-400">
-                        Właściciel: {v.userEmail || v.userId} • Paliwo: {v.fuelConfig} • Przebieg: {v.currentOdometer} km
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteVehicle(v.id)}
-                      className="p-2 text-red-400 hover:bg-zinc-800 rounded-lg"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Car className="w-6 h-6 text-amber-500" /> Wszystkie pojazdy w bazie ({vehicles.length})
+            </h2>
+            <div className="space-y-3">
+              {vehicles.map(v => (
+                <div key={v.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold">{v.name} ({v.plate})</div>
+                    <div className="text-xs text-zinc-400">
+                      Właściciel: {v.userEmail || v.userId} • Paliwo: {v.fuelConfig} • Przebieg: {v.currentOdometer} km
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteVehicle(v.id)}
+                    className="p-2 text-red-400 hover:bg-zinc-800 rounded-lg"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       </main>
 
       {/* Dolny pasek nawigacji na telefony */}
