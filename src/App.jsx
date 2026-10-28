@@ -764,35 +764,35 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 pt-6">
-        {/* Rządowe Limity Cen Paliw */}
-        <div className="bg-amber-500/10 border border-amber-500/40 rounded-2xl p-5 mb-6 text-zinc-100 shadow-lg">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-2">
+        {/* Zmniejszony kafelek: Rządowe Limity Cen Paliw */}
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3.5 mb-6 text-zinc-100 shadow-md">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-xl">🛡️</span>
-              <h3 className="font-bold text-amber-400">{fuelLimits.statusText}</h3>
+              <span className="text-base">🛡️</span>
+              <h3 className="font-bold text-sm sm:text-base text-amber-400">{fuelLimits.statusText}</h3>
             </div>
-            <span className="text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full font-semibold border border-amber-500/30">
+            <span className="text-[11px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-semibold border border-amber-500/30">
               Aktualizacja codzienna o 18:00
             </span>
           </div>
           
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
-              <div className="text-xs text-zinc-400 mb-1 font-medium">Benzyna 95</div>
-              <div className="text-xl font-black text-zinc-100">{fuelLimits.pb95} zł</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
+              <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 95</div>
+              <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb95} zł</div>
+              <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
             
-            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
-              <div className="text-xs text-zinc-400 mb-1 font-medium">Benzyna 98</div>
-              <div className="text-xl font-black text-zinc-100">{fuelLimits.pb98} zł</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+            <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
+              <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 98</div>
+              <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb98} zł</div>
+              <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
             
-            <div className="bg-zinc-950/70 border border-zinc-800 p-3.5 rounded-xl">
-              <div className="text-xs text-zinc-400 mb-1 font-medium">Olej Napędowy</div>
-              <div className="text-xl font-black text-zinc-100">{fuelLimits.on} zł</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">maks. za litr</div>
+            <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
+              <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Olej Napędowy</div>
+              <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.on} zł</div>
+              <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
           </div>
         </div>
@@ -966,14 +966,14 @@ export default function App() {
                             <div className="text-xs text-zinc-500 mt-1">
                               Przebieg: {log.odometer} km • {log.date} {log.time} • {log.isFullTank ? 'Do pełna' : 'Częściowe'}
                             </div>
+                          </div>
+                          <button
+                            onClick={() => deleteDoc(doc(db, 'fuelLogs', log.id))}
+                            className="p-2 text-zinc-500 hover:text-red-400"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                        <button
-                          onClick={() => deleteDoc(doc(db, 'fuelLogs', log.id))}
-                          className="p-2 text-zinc-500 hover:text-red-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
                       ))}
                     </div>
                   )}
@@ -1004,7 +1004,7 @@ export default function App() {
                 <Camera className="w-6 h-6 text-amber-500" /> Nowe tankowanie (AI OCR + Gemini Fallback)
               </h2>
 
-              {/* Przycisk Skanowania Paragonu (Wybór z galerii lub aparatu) */}
+              {/* Przycisk Skanowania Paragonu (Aparat / Galeria) */}
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/40 hover:border-amber-500 bg-amber-500/5 rounded-2xl p-6 cursor-pointer transition mb-6">
                 <Camera className="w-10 h-10 text-amber-500 mb-2" />
                 <span className="font-bold text-amber-400 text-sm">
@@ -1033,130 +1033,130 @@ export default function App() {
                           onClick={() => setFuelType(type)}
                           className={`py-2.5 rounded-xl font-bold text-sm border ${
                             fuelType === type ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-400 border-zinc-800'
-                        }`}
+                          }`}
                         >
                           {type}
                         </button>
-                    ))}
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-zinc-400">
+                    Domyślne paliwo pojazdu: <strong className="text-amber-400">{activeVehicle?.fuelConfig}</strong>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Cena za litr (zł)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={pricePerLiter}
+                      onChange={(e) => handlePriceOrTotalChange(e.target.value, totalCost)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Cena całk. (zł)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={totalCost}
+                      onChange={(e) => handlePriceOrTotalChange(pricePerLiter, e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Ilość litrów (L)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={liters}
+                      onChange={(e) => handleLitersChange(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="text-xs text-zinc-400">
-                  Domyślne paliwo pojazdu: <strong className="text-amber-400">{activeVehicle?.fuelConfig}</strong>
-                </div>
-              )}
 
-              <div className="grid grid-cols-3 gap-3">
+                {/* POLE PRZEBIEGU ORAZ DEDYKOWANY PRZYCISK OCR LICZNIKÓW AI (Aparat / Galeria) */}
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Cena za litr (zł)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={pricePerLiter}
-                    onChange={(e) => handlePriceOrTotalChange(e.target.value, totalCost)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Cena całk. (zł)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={totalCost}
-                    onChange={(e) => handlePriceOrTotalChange(pricePerLiter, e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Ilość litrów (L)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={liters}
-                    onChange={(e) => handleLitersChange(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5"
-                  />
-                </div>
-              </div>
-
-              {/* POLE PRZEBIEGU ORAZ DEDYKOWANY PRZYCISK OCR LICZNIKÓW AI (Galeria / Aparat) */}
-              <div>
-                <label className="block text-xs text-amber-400 font-bold mb-1">
-                  Aktualny przebieg samochodu (km) — poprzednio: {activeVehicle?.currentOdometer || activeVehicle?.initialOdometer || 0} km
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={odometer}
-                  onChange={(e) => setOdometer(e.target.value)}
-                  placeholder="Wpisz aktualny stan licznika"
-                  className="w-full bg-zinc-950 border border-amber-500/50 rounded-xl px-4 py-3 text-lg font-bold"
-                />
-
-                <div className="mt-2">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    id="odometer-ocr-input"
-                    className="hidden"
-                    onChange={handleOdometerUpload}
-                  />
-                  <label
-                    htmlFor="odometer-ocr-input"
-                    className="inline-flex items-center justify-center w-full py-2.5 px-4 bg-zinc-950 hover:bg-zinc-800 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-xl cursor-pointer transition shadow-sm"
-                  >
-                    {odometerOcrLoading ? '📷 Analizowanie licznika przez AI...' : '📷 Wybierz zdjęcie licznika (Aparat / Galeria)'}
+                  <label className="block text-xs text-amber-400 font-bold mb-1">
+                    Aktualny przebieg samochodu (km) — poprzednio: {activeVehicle?.currentOdometer || activeVehicle?.initialOdometer || 0} km
                   </label>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Data tankowania</label>
                   <input
-                    type="date"
+                    type="number"
                     required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                    value={odometer}
+                    onChange={(e) => setOdometer(e.target.value)}
+                    placeholder="Wpisz aktualny stan licznika"
+                    className="w-full bg-zinc-950 border border-amber-500/50 rounded-xl px-4 py-3 text-lg font-bold"
+                  />
+
+                  <div className="mt-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id="odometer-ocr-input"
+                      className="hidden"
+                      onChange={handleOdometerUpload}
+                    />
+                    <label
+                      htmlFor="odometer-ocr-input"
+                      className="inline-flex items-center justify-center w-full py-2.5 px-4 bg-zinc-950 hover:bg-zinc-800 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-xl cursor-pointer transition shadow-sm"
+                    >
+                      {odometerOcrLoading ? '📷 Analizowanie licznika przez AI...' : '📷 Wybierz zdjęcie licznika (Aparat / Galeria)'}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Data tankowania</label>
+                    <input
+                      type="date"
+                      required
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Godzina</label>
+                    <input
+                      type="time"
+                      required
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Pytanie o pełny zbiornik */}
+                <div className="flex items-center justify-between bg-zinc-950 border border-zinc-800 p-4 rounded-xl">
+                  <span className="text-sm font-medium">Czy pojazd jest zatankowany do pełna?</span>
+                  <input
+                    type="checkbox"
+                    checked={isFullTank}
+                    onChange={(e) => setIsFullTank(e.target.checked)}
+                    className="w-5 h-5 accent-amber-500 rounded cursor-pointer"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Godzina</label>
-                  <input
-                    type="time"
-                    required
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm"
-                  />
-                </div>
-              </div>
 
-              {/* Pytanie o pełny zbiornik */}
-              <div className="flex items-center justify-between bg-zinc-950 border border-zinc-800 p-4 rounded-xl">
-                <span className="text-sm font-medium">Czy pojazd jest zatankowany do pełna?</span>
-                <input
-                  type="checkbox"
-                  checked={isFullTank}
-                  onChange={(e) => setIsFullTank(e.target.checked)}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-bold py-3.5 rounded-xl transition"
-              >
-                {isSubmitting ? 'Zapisywanie...' : 'Zapisz tankowanie'}
-              </button>
-            </form>
-          </div>
-        )
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 font-bold py-3.5 rounded-xl transition"
+                >
+                  {isSubmitting ? 'Zapisywanie...' : 'Zapisz tankowanie'}
+                </button>
+              </form>
+            </div>
+          )
         )}
 
         {/* ZAKŁADKA 3: ZARZĄDZANIE FLOTĄ POJAZDÓW */}
@@ -1308,37 +1308,37 @@ export default function App() {
                           {u.blocked ? 'Odblokuj' : 'Zablokuj'}
                         </button>
                       )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Car className="w-6 h-6 text-amber-500" /> Wszystkie pojazdy w bazie ({vehicles.length})
-            </h2>
-            <div className="space-y-3">
-              {vehicles.map(v => (
-                <div key={v.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between">
-                  <div>
-                    <div className="font-bold">{v.name} ({v.plate})</div>
-                    <div className="text-xs text-zinc-400">
-                      Właściciel: {v.userEmail || v.userId} • Paliwo: {v.fuelConfig} • Przebieg: {v.currentOdometer} km
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDeleteVehicle(v.id)}
-                    className="p-2 text-red-400 hover:bg-zinc-800 rounded-lg"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Car className="w-6 h-6 text-amber-500" /> Wszystkie pojazdy w bazie ({vehicles.length})
+              </h2>
+              <div className="space-y-3">
+                {vehicles.map(v => (
+                  <div key={v.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="font-bold">{v.name} ({v.plate})</div>
+                      <div className="text-xs text-zinc-400">
+                        Właściciel: {v.userEmail || v.userId} • Paliwo: {v.fuelConfig} • Przebieg: {v.currentOdometer} km
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteVehicle(v.id)}
+                      className="p-2 text-red-400 hover:bg-zinc-800 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </main>
 
       {/* Dolny pasek nawigacji na telefony */}
