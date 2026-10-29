@@ -152,93 +152,46 @@ export default function App() {
   }, []);
 
   // Funkcja aktualizacji limitów przez AI (z poprawnie zdefiniowanym async)
-  const handleUpdateLimitsWithAI = async () => {
+const handleUpdateLimitsWithAI = async () => {
     setIsUpdatingLimitsAI(true);
-    setFuelLimits(prev => ({ ...prev, statusText: 'Aktualizowanie przez AI...' }));
-    
-    const prompt = 'Podaj aktualne maksymalne lub średnie rynkowe ceny paliw w Polsce (Benzyna 95, Benzyna 98, Olej Napędowy ON) na dzisiejszy dzień. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pb95": "6.55", "pb98": "7.24", "on": "8.28"}';
+    setFuelLimits(prev => ({ ...prev, statusText: 'Przeszukiwanie internetu...' }));
 
-    let candidateModels = [];
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        candidateModels = (listData.models || [])
-          .filter(m => 
-            m.supportedGenerationMethods?.includes('generateContent') &&
-            m.name.includes('gemini') &&
-            !m.name.includes('embedding') &&
-            !m.name.includes('imagen') &&
-            !m.name.includes('veo') &&
-            !m.name.includes('tts') &&
-            !m.name.includes('audio')
-          )
-          .map(m => m.name.replace('models/', ''));
+      const prompt = 'Sprawdź w wyszukiwarke Google aktualne średnie lub maksymalne ceny paliw w Polsce na dzisiejszy dzień dla PB95, PB98 i ON. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pb95": "6.XX", "pb98": "7.XX", "on": "8.XX"}';
 
-        candidateModels.sort((a, b) => {
-          const score = (name) => name.includes('lite') ? 1 : name.includes('flash') ? 2 : name.includes('pro') ? 3 : 4;
-          return score(a) - score(b);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          // Włączenie narzędzia wyszukiwania Google w czasie rzeczywistym dla modelu
+          tools: [{ googleSearch: {} }],
+          generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+        })
+      });
+
+      if (!response.ok) throw new Error('Błąd API');
+      const result = await response.json();
+      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+
+      if (parsed.pb95 && parsed.pb98 && parsed.on) {
+        setFuelLimits({
+          pb95: String(parsed.pb95),
+          pb98: String(parsed.pb98),
+          on: String(parsed.on),
+          statusText: `Limity zaktualizowane z sieci (${new Date().toLocaleDateString('pl-PL')})`
         });
+        alert('Pomyślnie pobrano najświeższe ceny z internetu!');
       }
-    } catch (e) {
-      console.warn('Nie pobrano modeli Gemini:', e);
+    } catch (err) {
+      console.error(err);
+      alert('Nie udało się pobrać danych z sieci. Sprawdź połączenie.');
+    } finally {
+      setIsUpdatingLimitsAI(false);
     }
-
-    if (candidateModels.length === 0) {
-      candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-pro-latest'];
-    }
-
-    let success = false;
-    let lastError = null;
-
-    for (const modelName of candidateModels) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-          })
-        });
-
-        clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`Kod HTTP ${response.status}`);
-
-        const result = await response.json();
-        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
-
-        if (parsed.pb95 && parsed.pb98 && parsed.on) {
-          setFuelLimits(prev => ({
-            ...prev,
-            pb95: String(parsed.pb95),
-            pb98: String(parsed.pb98),
-            on: String(parsed.on),
-            statusText: `Limity cen paliw (Zaktualizowano przez AI: ${modelName})`
-          }));
-          alert('Pomyślnie zaktualizowano limity cen paliw przy użyciu AI!');
-          success = true;
-          break;
-        }
-      } catch (err) {
-        clearTimeout(timeoutId);
-        lastError = err;
-      }
-    }
-
-    if (!success) {
-      console.error(lastError);
-      alert('Nie udało się pobrać aktualizacji z AI. Spróbuj ponownie później.');
-      setFuelLimits(prev => ({ ...prev, statusText: 'Błąd aktualizacji AI' }));
-    }
-
-    setIsUpdatingLimitsAI(false);
   };
 
   // 1. Nasłuchiwanie stanu zalogowania
