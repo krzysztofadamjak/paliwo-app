@@ -82,6 +82,7 @@ export default function App() {
   const [ocrStatus, setOcrStatus] = useState('');
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdatingLimitsAI, setIsUpdatingLimitsAI] = useState(false); // Stan ładowania aktualizacji limitów przez AI
 
   // --- STANY MODUŁU 1: SERWIS I TERMINY (OC/AC, PRZEGLĄD, WYMIANY) ---
   const [insuranceExpiryInput, setInsuranceExpiryInput] = useState('');
@@ -141,18 +142,55 @@ export default function App() {
         year: 'numeric'
       });
 
-      setFuelLimits({
-        pb95: '6.55',
-        pb98: '7.24',
-        on: '8.28',
+      setFuelLimits(prev => ({
+        ...prev,
         statusText: `Limity cen paliw na dzień ${formattedDate}`
-      });
+      }));
     };
 
     updateFuelLimitsDate();
     const interval = setInterval(updateFuelLimitsDate, 3600000);
     return () => clearInterval(interval);
   }, []);
+
+  // Funkcja aktualizacji limitów cen paliw przy użyciu sztucznej inteligencji (Gemini)
+  const handleUpdateLimitsWithAI = async () => {
+    setIsUpdatingLimitsAI(true);
+    try {
+      const prompt = 'Podaj aktualne maksymalne lub średnie rynkowe ceny paliw w Polsce (Benzyna 95, Benzyna 98, Olej Napędowy ON) na dzisiejszy dzień. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pb95": "6.55", "pb98": "7.24", "on": "8.28"}';
+      
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+        })
+      });
+
+      if (!response.ok) throw new Error('Błąd połączenia z AI');
+      const result = await response.json();
+      const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+
+      if (parsed.pb95 && parsed.pb98 && parsed.on) {
+        setFuelLimits(prev => ({
+          ...prev,
+          pb95: String(parsed.pb95),
+          pb98: String(parsed.pb98),
+          on: String(parsed.on),
+          statusText: `Limity cen paliw (Zaktualizowano przez AI)`
+        }));
+        alert('Pomyślnie zaktualizowano limity cen paliw przy użyciu AI!');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Nie udało się pobrać aktualizacji z AI. Spróbuj ponownie później.');
+    } finally {
+      setIsUpdatingLimitsAI(false);
+    }
+  };
 
   // 1. Nasłuchiwanie stanu zalogowania
   useEffect(() => {
@@ -409,7 +447,7 @@ export default function App() {
     throw lastError || new Error('Wszystkie dostępne modele AI są w tej chwili zajęte.');
   };
 
-  // --- OCR PARAGONU PALIWOWEGO ---
+  // --- OCR PARAGONU ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -726,24 +764,40 @@ export default function App() {
     if (selectedVehicleId === id) setSelectedVehicleId('');
   };
 
-  // --- STATYSTYKI, TCO, KILOMETRÓWKA I DORADCA ECO-DRIVING (MODUŁY 1-4) ---
+  // --- STATYSTYKI Z POPRAWIONYMI FILTRAMI CZASOWYMI I SORTOWANIEM CHRONOLOGICZNYM ---
   const stats = useMemo(() => {
     if (!activeVehicle) {
       return {
         cost: '0.00', liters: '0.00', distance: 0, avgConsumption: '0.00',
         currentMonthCost: '0.00', recentLogs: [], vehicleServices: [], vehicleExpenses: [],
         otherCostsTotal: '0.00', totalTco: '0.00', costPerKm: '0.00', costPer100KmFuel: '0.00',
-        vatDeductibleTotal: '0.00', netBusinessCost: '0.00', estimatedCarValue: '0.00',
-        depreciationTotal: '0.00', ecoAdvice: null, alerts: []
+        vatDeductibleTotal: '0.00', netBusinessCost: '0.00',
+        ecoAdvice: null, alerts: [], categoryBreakdown: {}
       };
     }
 
     const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     const filterByDate = (dateStr) => {
-      const logDate = new Date(dateStr);
-      if (timeFilter === 'week') return logDate >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      if (timeFilter === 'month') return logDate >= new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      if (timeFilter === 'year') return logDate >= new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const logDate = new Date(year, month - 1, day);
+
+      if (timeFilter === 'week') {
+        const weekAgo = new Date(todayStart);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return logDate >= weekAgo;
+      }
+      if (timeFilter === 'month') {
+        const monthAgo = new Date(todayStart);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        return logDate >= monthAgo;
+      }
+      if (timeFilter === 'year') {
+        const yearAgo = new Date(todayStart);
+        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        return logDate >= yearAgo;
+      }
       return true;
     };
 
@@ -753,12 +807,11 @@ export default function App() {
       return t === tripFilter;
     };
 
-    // KLUCZowa zmiana: Sortujemy logi ściśle po dacie (od najstarszego do najnowszego)
+    // Ścisłe sortowanie chronologiczne po dacie i godzinie
     const allVehicleFuelLogs = logs
       .filter(l => l.vehicleId === activeVehicle.id)
       .sort((a, b) => new Date(`${a.date}T${a.time || '00:00'}`) - new Date(`${b.date}T${b.time || '00:00'}`));
 
-    // Wyliczanie jednostkowego spalania między poprawnie posortowanymi tankowaniami
     const logsWithSingleConsumption = allVehicleFuelLogs.map((log, index) => {
       if (index === 0) {
         const distFromInit = log.odometer - (activeVehicle.initialOdometer || log.odometer);
@@ -796,11 +849,9 @@ export default function App() {
     // Dystans
     let distance = 0;
     if (filteredLogs.length > 0) {
-      if (tripFilter === 'all') {
+      if (timeFilter === 'all' && tripFilter === 'all') {
         const maxOdo = Math.max(...filteredLogs.map(l => l.odometer));
-        const minOdo = timeFilter === 'all' 
-          ? activeVehicle.initialOdometer 
-          : Math.min(...filteredLogs.map(l => l.odometer));
+        const minOdo = activeVehicle.initialOdometer;
         distance = Math.max(0, maxOdo - minOdo);
       } else {
         distance = filteredLogs.reduce((acc, l) => acc + (l.segmentDistance || 0), 0);
@@ -1121,16 +1172,29 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 pt-6">
-        {/* Zmniejszony kafelek: Rządowe Limity Cen Paliw */}
+        {/* Zmniejszony kafelek: Rządowe Limity Cen Paliw + Przycisk AI */}
         <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-3.5 mb-5 text-zinc-100 shadow-md print:hidden">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2.5 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">🛡️</span>
               <h3 className="font-bold text-sm sm:text-base text-amber-400">{fuelLimits.statusText}</h3>
             </div>
-            <span className="text-[11px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-semibold border border-amber-500/30">
-              Aktualizacja codzienna o 18:00
-            </span>
+            
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleUpdateLimitsWithAI}
+                disabled={isUpdatingLimitsAI}
+                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-zinc-950 text-xs font-bold rounded-lg transition shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingLimitsAI ? 'animate-spin' : ''}`} />
+                {isUpdatingLimitsAI ? 'Aktualizowanie...' : 'Aktualizuj dane z AI'}
+              </button>
+
+              <span className="text-[11px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-semibold border border-amber-500/30 hidden sm:inline-block">
+                Aktualizacja codzienna o 18:00
+              </span>
+            </div>
           </div>
           
           <div className="grid grid-cols-3 gap-2 text-center">
@@ -1490,12 +1554,12 @@ export default function App() {
                           </button>
                         </div>
                       ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         )}
 
         {/* ZAKŁADKA 2: DODAJ TANKOWANIE / OCR */}
@@ -2251,28 +2315,29 @@ export default function App() {
       </main>
 
       {/* Dolny pasek nawigacji na telefony */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 flex justify-around py-2.5 z-30 print:hidden">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center text-[11px] ${activeTab === 'dashboard' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <TrendingUp className="w-5 h-5 mb-0.5" /> Pulpit
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 flex justify-around py-3 z-30 print:hidden">
+        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center text-xs ${activeTab === 'dashboard' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <TrendingUp className="w-5 h-5 mb-1" /> Pulpit
         </button>
-        <button onClick={() => setActiveTab('refuel')} className={`flex flex-col items-center text-[11px] ${activeTab === 'refuel' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Camera className="w-5 h-5 mb-0.5" /> Tankuj
+        <button onClick={() => setActiveTab('refuel')} className={`flex flex-col items-center text-xs ${activeTab === 'refuel' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Camera className="w-5 h-5 mb-1" /> Tankuj / OCR
         </button>
-        <button onClick={() => setActiveTab('service')} className={`flex flex-col items-center text-[11px] ${activeTab === 'service' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Wrench className="w-5 h-5 mb-0.5" /> Serwis
+        <button onClick={() => setActiveTab('service')} className={`flex flex-col items-center text-xs ${activeTab === 'service' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Wrench className="w-5 h-5 mb-1" /> Serwis
         </button>
-        <button onClick={() => setActiveTab('expenses')} className={`flex flex-col items-center text-[11px] ${activeTab === 'expenses' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Receipt className="w-5 h-5 mb-0.5" /> TCO
+        <button onClick={() => setActiveTab('expenses')} className={`flex flex-col items-center text-xs ${activeTab === 'expenses' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Receipt className="w-5 h-5 mb-1" /> TCO
         </button>
-        <button onClick={() => setActiveTab('fleet')} className={`flex flex-col items-center text-[11px] ${activeTab === 'fleet' ? 'text-amber-500' : 'text-zinc-400'}`}>
-          <Car className="w-5 h-5 mb-0.5" /> Flota
+        <button onClick={() => setActiveTab('fleet')} className={`flex flex-col items-center text-xs ${activeTab === 'fleet' ? 'text-amber-500' : 'text-zinc-400'}`}>
+          <Car className="w-5 h-5 mb-1" /> Pojazdy
         </button>
         {isAdmin && (
-          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center text-[11px] ${activeTab === 'admin' ? 'text-amber-500' : 'text-zinc-400'}`}>
-            <ShieldAlert className="w-5 h-5 mb-0.5" /> Admin
+          <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center text-xs ${activeTab === 'admin' ? 'text-amber-500' : 'text-zinc-400'}`}>
+            <ShieldAlert className="w-5 h-5 mb-1" /> Admin
           </button>
         )}
       </nav>
     </div>
   );
 }
+```[cite: 1, 2]
