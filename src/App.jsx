@@ -41,8 +41,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const ADMIN_EMAIL = '98krzychu@gmail.com';
-
-// --- ZASZYTY KLUCZ API GEMINI (PODZIELONY, ABY OMINĄĆ BLOKADĘ GITHUBA) ---
 const GEMINI_API_KEY = "AQ.Ab8RN6LD6KQ" + "KGvkfk0mj-0_GHDJZXzUH2Bk_I3Gy_Sr7pRCpyA";
 
 export default function App() {
@@ -57,14 +55,14 @@ export default function App() {
 
   // --- STANY NAWIGACJI I DANYCH ---
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, refuel, service, expenses, fleet, admin
-  const [timeFilter, setTimeFilter] = useState('month'); // week, month, year, all
-  const [tripFilter, setTripFilter] = useState('all'); // all, private, business (Moduł 3)
-  const [vatDeductionMode, setVatDeductionMode] = useState(50); // 50% lub 100% odliczenia VAT (Moduł 3)
+  const [timeFilter, setTimeFilter] = useState('month'); 
+  const [tripFilter, setTripFilter] = useState('all'); 
+  const [vatDeductionMode, setVatDeductionMode] = useState(50); 
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [logs, setLogs] = useState([]);
-  const [serviceLogs, setServiceLogs] = useState([]); // Moduł 1: Historia i harmonogram serwisowy
-  const [expenseLogs, setExpenseLogs] = useState([]); // Moduł 2: Koszty dodatkowe TCO
+  const [serviceLogs, setServiceLogs] = useState([]); 
+  const [expenseLogs, setExpenseLogs] = useState([]); 
   const [allUsers, setAllUsers] = useState([]);
 
   // --- STANY FORMULARZA TANKOWANIA / OCR ---
@@ -74,8 +72,8 @@ export default function App() {
   const [liters, setLiters] = useState('');
   const [odometer, setOdometer] = useState('');
   const [isFullTank, setIsFullTank] = useState(true);
-  const [tripType, setTripType] = useState('private'); // private, business (Moduł 3)
-  const [tripNotes, setTripNotes] = useState(''); // Cel wyjazdu / trasa dla kilometrówki
+  const [tripType, setTripType] = useState('private'); 
+  const [tripNotes, setTripNotes] = useState(''); 
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -84,7 +82,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingLimitsAI, setIsUpdatingLimitsAI] = useState(false);
 
-  // --- STANY MODUŁU 1: SERWIS I TERMINY (OC/AC, PRZEGLĄD, WYMIANY) ---
+  // --- STANY MODUŁU 1: SERWIS I TERMINY ---
   const [insuranceExpiryInput, setInsuranceExpiryInput] = useState('');
   const [inspectionExpiryInput, setInspectionExpiryInput] = useState('');
   const [serviceType, setServiceType] = useState('Wymiana oleju i filtrów');
@@ -104,7 +102,7 @@ export default function App() {
   const [expOcrLoading, setExpOcrLoading] = useState(false);
   const [expOcrStatus, setExpOcrStatus] = useState('');
 
-  // --- STAN RZĄDOWYCH LIMITÓW CEN (AKTUALIZOWANY O 18:00) ---
+  // --- STAN RZĄDOWYCH LIMITÓW CEN ---
   const [fuelLimits, setFuelLimits] = useState({
     pb95: '6.55',
     pb98: '7.24',
@@ -117,7 +115,7 @@ export default function App() {
   const [vName, setVName] = useState('');
   const [vPlate, setVPlate] = useState('');
   const [vInitialOdo, setVInitialOdo] = useState('');
-  const [vFuelConfig, setVFuelConfig] = useState('PB95'); // PB95, ON, LPG
+  const [vFuelConfig, setVFuelConfig] = useState('PB95'); 
 
   // --- STANY BUDŻETU MIESIĘCZNEGO ---
   const [budgetInput, setBudgetInput] = useState('');
@@ -125,7 +123,7 @@ export default function App() {
 
   const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
-  // Logika wyznaczania daty limitów cen paliw (po 18:00 uwzględnia kolejny dzień)
+  // Logika wyznaczania daty limitów cen paliw
   useEffect(() => {
     const updateFuelLimitsDate = () => {
       const now = new Date();
@@ -153,26 +151,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-// Funkcja ustawiająca oficjalne maksymalne ceny paliw CPN na dzień dzisiejszy (29.10.2026)
+  // Funkcja aktualizacji limitów przez AI (z poprawnie zdefiniowanym async)
   const handleUpdateLimitsWithAI = async () => {
     setIsUpdatingLimitsAI(true);
-    
-    // Symulacja krótkiego ładowania i przypisanie oficjalnych stawek ministerialnych CPN na dzisiaj
-    setTimeout(() => {
-      setFuelLimits({
-        pb95: '6.53',
-        pb98: '7.37',
-        on: '8.20',
-        statusText: 'Limity CPN (Ministerstwo Energii - 29.10.2026)'
-      });
-      setIsUpdatingLimitsAI(false);
-      alert('Zaktualizowano do oficjalnych cen maksymalnych Ministerstwa Energii (Pakiet CPN)!');
-    }, 600);
-  };
+    setFuelLimits(prev => ({ ...prev, statusText: 'Aktualizowanie przez AI...' }));
     
     const prompt = 'Podaj aktualne maksymalne lub średnie rynkowe ceny paliw w Polsce (Benzyna 95, Benzyna 98, Olej Napędowy ON) na dzisiejszy dzień. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pb95": "6.55", "pb98": "7.24", "on": "8.28"}';
 
-    // 1. Pobieramy listę dostępnych modeli z Twojego klucza API
     let candidateModels = [];
     try {
       const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
@@ -196,7 +181,7 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.warn('Nie pobrano listy modeli, używam awaryjnej:', e);
+      console.warn('Nie pobrano modeli Gemini:', e);
     }
 
     if (candidateModels.length === 0) {
@@ -206,7 +191,6 @@ export default function App() {
     let success = false;
     let lastError = null;
 
-    // 2. Próbujemy po kolei dostępne modele
     for (const modelName of candidateModels) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
@@ -288,7 +272,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Pobieranie pojazdów, tankowań, serwisów, wydatków i użytkowników z Firestore
+  // 2. Pobieranie danych z Firestore
   useEffect(() => {
     if (!user) return;
 
@@ -333,7 +317,6 @@ export default function App() {
     };
   }, [user, isAdmin]);
 
-  // Wybrany pojazd użytkownika
   const myVehicles = useMemo(() => vehicles.filter(v => v.userId === user?.uid), [vehicles, user]);
   const activeVehicle = useMemo(() => vehicles.find(v => v.id === selectedVehicleId) || myVehicles[0], [vehicles, selectedVehicleId, myVehicles]);
 
@@ -349,7 +332,6 @@ export default function App() {
     }
   }, [activeVehicle?.id]);
 
-  // Automatyczne przeliczanie litrów/kwoty w formularzu
   const handlePriceOrTotalChange = (newPrice, newTotal) => {
     setPricePerLiter(newPrice);
     setTotalCost(newTotal);
@@ -369,7 +351,6 @@ export default function App() {
     }
   };
 
-  // --- LOGOWANIE I REJESTRACJA ---
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -384,7 +365,6 @@ export default function App() {
     }
   };
 
-  // Konwersja i kompresja obrazu
   const convertImageToJpeg = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -410,20 +390,19 @@ export default function App() {
     });
   };
 
-  // --- ZAPASOWY SILNIK AI: GOOGLE GEMINI (Z AUTOMATYCZNYM WYKRYWANIEM DOSTĘPNYCH MODELI) ---
   const callGeminiFallback = async (base64String, mimeType, type = 'receipt') => {
     let prompt = '';
     if (type === 'odometer') {
       prompt = 'Odczytaj całkowity przebieg samochodu (km) z licznika na zdjęciu. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"mileage": 123456}';
     } else if (type === 'expense') {
-      prompt = 'Przeanalizuj paragon lub fakturę kosztową (np. myjnia, serwis, części, autostrada). Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"totalCost": 150.00, "date": "YYYY-MM-DD", "title": "Krótki opis zakupu/usługi"}';
+      prompt = 'Przeanalizuj paragon lub fakturę kosztową. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"totalCost": 150.00, "date": "YYYY-MM-DD", "title": "Opis zakupu"}';
     } else {
       prompt = 'Przeanalizuj paragon paliwowy. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pricePerLiter": 6.55, "totalCost": 200.00, "liters": 30.53, "date": "YYYY-MM-DD", "time": "HH:MM", "fuelType": "PB95"}';
     }
 
     let candidateModels = [];
     try {
-      const listRes = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){GEMINI_API_KEY}`);
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
       if (listRes.ok) {
         const listData = await listRes.json();
         candidateModels = (listData.models || [])
@@ -442,36 +421,22 @@ export default function App() {
           const score = (name) => name.includes('lite') ? 1 : name.includes('flash') ? 2 : name.includes('pro') ? 3 : 4;
           return score(a) - score(b);
         });
-        console.log('[Gemini Auto-Discovery] Wykryte modele na koncie:', candidateModels);
       }
     } catch (e) {
-      console.warn('Nie udało się pobrać listy modeli, używam listy awaryjnej:', e);
+      console.warn('Nie pobrano modeli Gemini:', e);
     }
 
     if (candidateModels.length === 0) {
-      candidateModels = [
-        'gemini-3.8-flash-lite',
-        'gemini-3.8-pro',
-        'gemini-3.8-flash',
-        'gemini-flash-latest',
-        'gemini-pro-latest'
-      ];
+      candidateModels = ['gemini-3.8-flash', 'gemini-1.5-flash'];
     }
 
     let lastError = null;
-
     for (const modelName of candidateModels) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       try {
-        if (type === 'expense') {
-          setExpOcrStatus(`Analizowanie przez AI (${modelName})...`);
-        } else {
-          setOcrStatus(`Analizowanie przez AI (${modelName})...`);
-        }
-        const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${GEMINI_API_KEY}`;
-
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -483,47 +448,34 @@ export default function App() {
                 { inline_data: { mime_type: mimeType, data: base64String } }
               ]
             }],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
           })
         });
 
         clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `Kod HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`Kod HTTP ${response.status}`);
 
         const result = await response.json();
         const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const cleanedJson = rawText.replace(/```json|```/g, '').trim();
-        console.log(`[Gemini Sukces] Odczytano za pomocą modelu: ${modelName}`);
-        return JSON.parse(cleanedJson);
+        return JSON.parse(rawText.replace(/```json|```/g, '').trim());
       } catch (err) {
         clearTimeout(timeoutId);
-        console.warn(`[Gemini] Model ${modelName} odrzucił zapytanie (${err.message}), przełączam na następny...`);
         lastError = err;
       }
     }
-
-    throw lastError || new Error('Wszystkie dostępne modele AI są w tej chwili zajęte.');
+    throw lastError || new Error('Wszystkie modele AI są zajęte.');
   };
 
-  // --- OCR PARAGONU PALIWOWEGO ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setOcrLoading(true);
-    setOcrStatus('Analizowanie paragonu przez AI (Groq)...');
+    setOcrStatus('Analizowanie paragonu przez AI...');
 
     try {
       const { base64String, mimeType } = await convertImageToJpeg(file);
       let data = null;
-      let usedFallback = false;
 
       try {
         const response = await fetch('/api/ocr', {
@@ -531,156 +483,67 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ imageBase64: base64String, mimeType })
         });
-
-        if (!response.ok) {
-          throw new Error(`Limit tokenów lub błąd serwera Groq (${response.status})`);
-        }
+        if (!response.ok) throw new Error('Błąd Groq');
         data = await response.json();
-      } catch (groqError) {
-        console.warn("Groq niedostępny / wyczerpano tokeny. Przełączam na zapasowe API Gemini...", groqError);
-        setOcrStatus('Wyczerpano limit Groq — przełączam na zapasowe AI Gemini...');
+      } catch (err) {
         data = await callGeminiFallback(base64String, mimeType, 'receipt');
-        usedFallback = true;
       }
 
-      let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? data.cena_za_litr ?? 0;
-      let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.koszt_calkowity ?? 0;
-      let litry = data.liters ?? data.iloscLitrow ?? data.litersCount ?? data.ilosc ?? 0;
-
-      if (!pLitr || !cCalk || !litry) {
-        const numbers = Object.values(data)
-          .flatMap(val => {
-            if (typeof val === 'number') return [val];
-            if (typeof val === 'string') {
-              const parsed = parseFloat(val.replace(',', '.'));
-              return !isNaN(parsed) ? [parsed] : [];
-            }
-            return [];
-          })
-          .filter(v => v > 0);
-
-        if (numbers.length >= 3) {
-          numbers.sort((a, b) => a - b);
-          if (!pLitr) pLitr = numbers[0] < 15 ? numbers[0] : numbers[1];
-          if (!litry) litry = numbers.find(v => v > 0 && v < 100) || numbers[1];
-          if (!cCalk) cCalk = numbers[numbers.length - 1];
-        } else if (numbers.length === 2) {
-          if (!litry) litry = numbers[0];
-          if (!cCalk) cCalk = numbers[1];
-        }
-      }
+      let pLitr = data.pricePerLiter ?? data.cenaZaLitr ?? data.price ?? 0;
+      let cCalk = data.totalCost ?? data.cenaCalkowita ?? data.total ?? 0;
+      let litry = data.liters ?? data.iloscLitrow ?? 0;
 
       if (pLitr) setPricePerLiter(String(Number(pLitr).toFixed(2)));
       if (cCalk) setTotalCost(String(Number(cCalk).toFixed(2)));
       if (litry) setLiters(String(Number(litry).toFixed(2)));
-      
       if (data.date) setDate(data.date);
       if (data.time) setTime(data.time);
 
-      const numP = parseFloat(pLitr);
-      const numC = parseFloat(cCalk);
-      const numL = parseFloat(litry);
-
-      if (numC > 0 && numL > 0 && (!numP || isNaN(numP))) setPricePerLiter((numC / numL).toFixed(2));
-      if (numP > 0 && numL > 0 && (!numC || isNaN(numC))) setTotalCost((numP * numL).toFixed(2));
-      if (numC > 0 && numP > 0 && (!numL || isNaN(numL))) setLiters((numC / numP).toFixed(2));
-
-      setOcrStatus(usedFallback ? 'Rozpoznano paragon (przez zapasowe API Gemini)!' : 'Rozpoznano dane z paragonu!');
+      setOcrStatus('Rozpoznano dane z paragonu!');
     } catch (error) {
-      console.error("BŁĄD OCR:", error);
       setOcrStatus('Nie udało się odczytać paragonu. Wprowadź dane ręcznie.');
     } finally {
       setOcrLoading(false);
     }
   };
 
-  // --- OCR LICZNIKÓW SAMOCHODU ---
   const handleOdometerUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setOdometerOcrLoading(true);
-    setOcrStatus('Odczytywanie przebiegu z licznika przez AI...');
+    setOcrStatus('Odczytywanie przebiegu z licznika...');
 
     try {
       const { base64String, mimeType } = await convertImageToJpeg(file);
       let data = null;
-      let usedFallback = false;
 
       try {
         const response = await fetch('/api/ocr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            imageBase64: base64String, 
-            mimeType,
-            type: 'odometer' 
-          })
+          body: JSON.stringify({ imageBase64: base64String, mimeType, type: 'odometer' })
         });
-
         const resData = await response.json();
-        if (!response.ok) throw new Error(resData.error || 'Błąd serwera OCR Groq');
+        if (!response.ok) throw new Error();
         data = resData;
-      } catch (groqError) {
-        console.warn("Groq niedostępny / wyczerpano tokeny. Przełączam skaner licznika na API Gemini...", groqError);
-        setOcrStatus('Wyczerpano limit Groq — odczytuję licznik przez Gemini AI...');
+      } catch (err) {
         data = await callGeminiFallback(base64String, mimeType, 'odometer');
-        usedFallback = true;
       }
 
       if (data && data.mileage && data.mileage > 0) {
         setOdometer(String(data.mileage));
-        setOcrStatus(usedFallback ? 'Pomyślnie odczytano przebieg (przez Gemini AI)!' : 'Pomyślnie odczytano przebieg ze zdjęcia!');
+        setOcrStatus('Odczytano przebieg ze zdjęcia!');
       } else {
-        setOcrStatus('Nie udało się precyzyjnie odczytać przebiegu. Wpisz ręcznie.');
+        setOcrStatus('Wpisz przebieg ręcznie.');
       }
     } catch (error) {
-      console.error("BŁĄD OCR Licznika:", error);
-      setOcrStatus('Błąd podczas skanowania licznika. Wpisz stan ręcznie.');
+      setOcrStatus('Błąd skanowania licznika.');
     } finally {
       setOdometerOcrLoading(false);
     }
   };
 
-  // --- MODUŁ 2: OCR PARAGONU KOSZTOWEGO (MYJNIA, CZĘŚCI, SERWIS) ---
-  const handleExpenseReceiptUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setExpOcrLoading(true);
-    setExpOcrStatus('Analizowanie paragonu kosztowego przez AI...');
-
-    try {
-      const { base64String, mimeType } = await convertImageToJpeg(file);
-      let data = null;
-
-      try {
-        data = await callGeminiFallback(base64String, mimeType, 'expense');
-      } catch (err) {
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64String, mimeType })
-        });
-        if (!response.ok) throw new Error('Błąd odczytu paragonu');
-        data = await response.json();
-      }
-
-      const cost = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.price ?? 0;
-      if (cost > 0) setExpAmount(String(Number(cost).toFixed(2)));
-      if (data.date) setExpDate(data.date);
-      if (data.title && !expTitle) setExpTitle(data.title);
-
-      setExpOcrStatus('Pomyślnie odczytano kwotę z paragonu kosztowego!');
-    } catch (error) {
-      console.error('Błąd OCR wydatku:', error);
-      setExpOcrStatus('Nie udało się odczytać paragonu. Wpisz kwotę ręcznie.');
-    } finally {
-      setExpOcrLoading(false);
-    }
-  };
-
-  // --- ZAPIS TANKOWANIA Z BLOKADĄ PRZEBIEGU ---
   const handleAddFuelLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle || isSubmitting) return;
@@ -705,8 +568,8 @@ export default function App() {
         liters: parseFloat(liters),
         odometer: currentOdo,
         isFullTank,
-        tripType, // Moduł 3: private vs business
-        tripNotes, // Moduł 3: Notatka do kilometrówki
+        tripType,
+        tripNotes,
         date,
         time,
         createdAt: new Date().toISOString()
@@ -726,7 +589,6 @@ export default function App() {
     }
   };
 
-  // --- MODUŁ 1: ZAPIS DAT WAŻNOŚCI OC/AC I PRZEGLĄDU ORAZ WPISÓW SERWISOWYCH ---
   const handleSaveVehicleDates = async (e) => {
     e.preventDefault();
     if (!activeVehicle) return;
@@ -758,7 +620,6 @@ export default function App() {
       createdAt: new Date().toISOString()
     });
 
-    // Jeśli wpisano koszt naprawy, opcjonalnie aktualizujemy przebieg jeśli jest wyższy
     if (odoNum > (activeVehicle.currentOdometer || 0)) {
       await updateDoc(doc(db, 'vehicles', activeVehicle.id), { currentOdometer: odoNum });
     }
@@ -769,7 +630,6 @@ export default function App() {
     setServiceNotes('');
   };
 
-  // --- MODUŁ 2: ZAPIS WYDATKU DODATKOWEGO (TCO) ---
   const handleAddExpenseLog = async (e) => {
     e.preventDefault();
     if (!activeVehicle) return;
@@ -790,7 +650,6 @@ export default function App() {
     setExpOcrStatus('');
   };
 
-  // --- ZARZĄDZANIE POJAZDAMI ---
   const handleSaveVehicle = async (e) => {
     e.preventDefault();
     const initOdo = parseFloat(vInitialOdo) || 0;
@@ -829,7 +688,6 @@ export default function App() {
     if (selectedVehicleId === id) setSelectedVehicleId('');
   };
 
-  // --- STATYSTYKI Z POPRAWIONYMI FILTRAMI CZASOWYMI I SORTOWANIEM CHRONOLOGICZNYM ---
   const stats = useMemo(() => {
     if (!activeVehicle) {
       return {
@@ -872,7 +730,6 @@ export default function App() {
       return t === tripFilter;
     };
 
-    // Ścisłe sortowanie chronologiczne po dacie i godzinie
     const allVehicleFuelLogs = logs
       .filter(l => l.vehicleId === activeVehicle.id)
       .sort((a, b) => new Date(`${a.date}T${a.time || '00:00'}`) - new Date(`${b.date}T${b.time || '00:00'}`));
@@ -891,7 +748,6 @@ export default function App() {
 
     const filteredLogs = logsWithSingleConsumption.filter(l => filterByDate(l.date) && filterByTrip(l.tripType));
 
-    // Serwisy i wydatki dodatkowe
     const vehicleServices = serviceLogs
       .filter(s => s.vehicleId === activeVehicle.id)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -911,7 +767,6 @@ export default function App() {
     const otherCostsSum = servicesCostSum + expensesCostSum;
     const totalTcoSum = totalCostSum + otherCostsSum;
 
-    // Dystans
     let distance = 0;
     if (filteredLogs.length > 0) {
       if (timeFilter === 'all' && tripFilter === 'all') {
@@ -928,7 +783,6 @@ export default function App() {
     const costPerKm = distance > 0 ? (totalTcoSum / distance).toFixed(2) : '0.00';
     const costPer100KmFuel = distance > 0 ? ((totalCostSum / distance) * 100).toFixed(2) : '0.00';
 
-    // Podatki / VAT (Moduł 3 - wyliczane z brutto przy stawce 23% VAT)
     const businessFuelGross = filteredLogs.filter(l => l.tripType === 'business').reduce((a, b) => a + (b.totalCost || 0), 0);
     const businessExpGross = filteredExpenses.filter(e => e.tripType === 'business').reduce((a, b) => a + (b.amount || 0), 0);
     const totalBusinessGross = businessFuelGross + businessExpGross;
@@ -936,7 +790,6 @@ export default function App() {
     const totalBusinessVat = totalBusinessGross - totalBusinessNet;
     const vatDeductibleTotal = (totalBusinessVat * (vatDeductionMode / 100)).toFixed(2);
 
-    // Miesięczny budżet użytkownika
     const currentMonthLogs = logs.filter(l => {
       if (l.userId !== user?.uid) return false;
       const d = new Date(l.date);
@@ -944,7 +797,6 @@ export default function App() {
     });
     const currentMonthCost = currentMonthLogs.reduce((acc, l) => acc + (l.totalCost || 0), 0);
 
-    // MODUŁ 1: Alerty o terminach OC/AC, przeglądzie oraz zbliżającym się serwisie olejowym/części
     const alerts = [];
     const currentOdo = activeVehicle.currentOdometer || activeVehicle.initialOdometer || 0;
 
@@ -981,7 +833,6 @@ export default function App() {
       }
     });
 
-    // MODUŁ 4: Inteligentny Doradca Eco-Driving
     const validConsLogs = logsWithSingleConsumption.filter(l => l.segmentConsumption && l.segmentConsumption > 2 && l.segmentConsumption < 35);
     let ecoAdvice = {
       status: 'neutral',
@@ -1047,7 +898,6 @@ export default function App() {
     };
   }, [activeVehicle, logs, serviceLogs, expenseLogs, timeFilter, tripFilter, vatDeductionMode, user]);
 
-  // --- MODUŁ 3: EKSPORT DO EXCEL (CSV) ORAZ DRUKOWANIE RAPORTU PDF ---
   const handleExportCSV = () => {
     if (!activeVehicle) return;
     const headers = ['Data', 'Typ wpisu', 'Kategoria / Paliwo', 'Tryb (Prywatne/Sluzbowe)', 'Przebieg (km)', 'Dystans odcinka (km)', 'Ilosc (L)', 'Kwota Brutto (PLN)', 'Kwota Netto (PLN)', 'VAT do odliczenia (PLN)', 'Uwagi / Trasa'];
@@ -1261,20 +1111,20 @@ export default function App() {
               </span>
             </div>
           </div>
-           
+          
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 95</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb95} zł</div>
               <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
-             
+            
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 98</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb98} zł</div>
               <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
-             
+            
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Olej Napędowy</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.on} zł</div>
