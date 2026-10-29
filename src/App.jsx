@@ -82,7 +82,7 @@ export default function App() {
   const [ocrStatus, setOcrStatus] = useState('');
   const [odometerOcrLoading, setOdometerOcrLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUpdatingLimitsAI, setIsUpdatingLimitsAI] = useState(false); // Stan ładowania aktualizacji limitów przez AI
+  const [isUpdatingLimitsAI, setIsUpdatingLimitsAI] = useState(false);
 
   // --- STANY MODUŁU 1: SERWIS I TERMINY (OC/AC, PRZEGLĄD, WYMIANY) ---
   const [insuranceExpiryInput, setInsuranceExpiryInput] = useState('');
@@ -153,13 +153,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Funkcja aktualizacji limitów cen paliw przy użyciu sztucznej inteligencji (Gemini)
+  // Funkcja aktualizacji limitów cen paliw przez AI
   const handleUpdateLimitsWithAI = async () => {
     setIsUpdatingLimitsAI(true);
     try {
       const prompt = 'Podaj aktualne maksymalne lub średnie rynkowe ceny paliw w Polsce (Benzyna 95, Benzyna 98, Olej Napędowy ON) na dzisiejszy dzień. Zwróć WYŁĄCZNIE czysty obiekt JSON w formacie: {"pb95": "6.55", "pb98": "7.24", "on": "8.28"}';
       
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const url = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$){GEMINI_API_KEY}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -358,7 +358,7 @@ export default function App() {
 
     let candidateModels = [];
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+      const listRes = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models?key=$](https://generativelanguage.googleapis.com/v1beta/models?key=$){GEMINI_API_KEY}`);
       if (listRes.ok) {
         const listData = await listRes.json();
         candidateModels = (listData.models || [])
@@ -405,7 +405,7 @@ export default function App() {
         } else {
           setOcrStatus(`Analizowanie przez AI (${modelName})...`);
         }
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+        const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
         const response = await fetch(url, {
           method: 'POST',
@@ -447,7 +447,7 @@ export default function App() {
     throw lastError || new Error('Wszystkie dostępne modele AI są w tej chwili zajęte.');
   };
 
-  // --- OCR PARAGONU ---
+  // --- OCR PARAGONU PALIWOWEGO ---
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1196,20 +1196,20 @@ export default function App() {
               </span>
             </div>
           </div>
-          
+           
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 95</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb95} zł</div>
               <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
-            
+             
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Benzyna 98</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.pb98} zł</div>
               <div className="text-[9px] text-zinc-500">maks. za litr</div>
             </div>
-            
+             
             <div className="bg-zinc-950/70 border border-zinc-800 p-2.5 rounded-lg">
               <div className="text-[11px] text-zinc-400 mb-0.5 font-medium">Olej Napędowy</div>
               <div className="text-base sm:text-lg font-black text-zinc-100">{fuelLimits.on} zł</div>
@@ -1554,12 +1554,12 @@ export default function App() {
                           </button>
                         </div>
                       ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         {/* ZAKŁADKA 2: DODAJ TANKOWANIE / OCR */}
@@ -1776,7 +1776,7 @@ export default function App() {
           )
         )}
 
-        {/* MODUŁ 1: ZAKŁADKA SERWIS I TERMINY (OC/AC, PRZEGLĄD, KSIĄŻKA SERWISOWA) */}
+        {/* ZAKŁADKA 1: SERWIS I TERMINY (OC/AC, PRZEGLĄD, KSIĄŻKA SERWISOWA) */}
         {activeTab === 'service' && (
           !activeVehicle ? (
             <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
@@ -1958,7 +1958,7 @@ export default function App() {
           )
         )}
 
-        {/* MODUŁ 2: ZAKŁADKA WYDATKI DODATKOWE (TCO) ZE SKANEREM PARAGONÓW */}
+        {/* ZAKŁADKA 2: ZAKŁADKA WYDATKI DODATKOWE (TCO) ZE SKANEREM PARAGONÓW */}
         {activeTab === 'expenses' && (
           !activeVehicle ? (
             <div className="max-w-xl mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
