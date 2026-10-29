@@ -479,46 +479,9 @@ export default function App() {
     } finally {
       setOdometerOcrLoading(false);
     }
-  };
+  }; 
   
-  // --- OCR PARAGONU KOSZTOWEGO (TCO) ---
-  const handleExpenseReceiptUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setExpOcrLoading(true);
-    setExpOcrStatus('Analizowanie paragonu kosztowego przez AI...');
-
-    try {
-      const { base64String, mimeType } = await convertImageToJpeg(file);
-      let data = null;
-
-      try {
-        data = await callGeminiFallback(base64String, mimeType, 'expense');
-      } catch (err) {
-        const response = await fetch('/api/ocr', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64String, mimeType })
-        });
-        if (!response.ok) throw new Error('Błąd odczytu paragonu');
-        data = await response.json();
-      }
-
-      const cost = data.totalCost ?? data.cenaCalkowita ?? data.total ?? data.price ?? 0;
-      if (cost > 0) setExpAmount(String(Number(cost).toFixed(2)));
-      if (data.date) setExpDate(data.date);
-      if (data.title && !expTitle) setExpTitle(data.title);
-
-      setExpOcrStatus('Pomyślnie odczytano kwotę z paragonu kosztowego!');
-    } catch (error) {
-      console.error('Błąd OCR wydatku:', error);
-      setExpOcrStatus('Nie udało się odczytać paragonu. Wpisz kwotę ręcznie.');
-    } finally {
-      setExpOcrLoading(false);
-    }
-  };
-
+  
   const startVoiceInput = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -575,7 +538,7 @@ export default function App() {
     }
   };
 
-  // --- OCR PARAGONU KOSZTOWEGO (TCO) ---
+// --- OCR PARAGONU KOSZTOWEGO (TCO) ---
   const handleExpenseReceiptUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
